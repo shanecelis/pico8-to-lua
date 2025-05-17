@@ -1,4 +1,3 @@
-use lazy_regex::regex;
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
 /// Modified (c) 2019 Ben Wiley <therealbenwiley@gmail.com>
 /// Modified (c) 2025 Shane Celis <shane.celis@gmail.com>
@@ -11,7 +10,8 @@ use lazy_regex::regex;
 ///
 /// Licensed under the Zlib license.
 use regex::{Regex, Replacer};
-use std::borrow::Cow;
+use lazy_regex::regex;
+use std::{error::Error, borrow::Cow};
 
 // https://stackoverflow.com/a/79268946/6454690
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
@@ -19,6 +19,36 @@ fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replac
     if let Cow::Owned(o) = new {
         *s = Cow::Owned(o);
     } // Otherwise, no change was made.
+}
+
+/// Resolve the Pico-8 "#include path.p8" statements with possible errors.
+pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> Result<String, E>) -> Result<Cow<'h, str>, E> {
+    let mut lua = lua.into();
+    let mut error = None;
+
+    replace_all_in_place(regex!(r"#include\s+(\S+)"), &mut lua,
+        |caps: &regex::Captures| {
+            match resolve(&caps[1]) {
+                Ok(s) => s,
+                Err(e) => {
+                    if error.is_none() {
+                        error = Some(e)
+                    }
+                    format!("error(\"failed to include {}: {}\")", &caps[1], &e)
+                }
+            }
+        });
+    Ok(lua)
+}
+
+/// Resolve the Pico-8 "#include path.p8" statements.
+pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> String) -> Cow<'h, str>  {
+    let mut lua = lua.into();
+    replace_all_in_place(regex!(r"#include\s+(\S+)"), &mut lua,
+        |caps: &regex::Captures| {
+            resolve(&caps[1])
+        });
+    lua
 }
 
 /// Given a string with the Pico-8 dialect of Lua, it will attempt to convert
@@ -211,5 +241,14 @@ mod tests {
             Cow::Owned(_) => true,
             Cow::Borrowed(_) => false,
         });
+    }
+
+    #[test]
+    fn test_includes() {
+        let lua = r#"
+        #include blah.p8
+        "#;
+        let patched = patch_includes(lua, |path| format!("-- INCLUDE {}", path));
+        assert!(patched.contains("-- INCLUDE"));
     }
 }
