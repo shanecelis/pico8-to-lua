@@ -10,7 +10,7 @@
 ///
 /// Licensed under the Zlib license.
 use regex::{Regex, Replacer};
-use regex_macro::regex;
+use lazy_regex::regex;
 use std::borrow::Cow;
 
 // https://stackoverflow.com/a/79268946/6454690

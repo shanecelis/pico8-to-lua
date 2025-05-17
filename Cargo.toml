@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-regex = "1.11.1"
-regex-macro = "0.3.0"
+lazy-regex = { version = "3.0", default-features = false, features = ["lite"] }
+regex-lite = "0.1.6"
