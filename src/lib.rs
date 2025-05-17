@@ -46,7 +46,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
                 if let Some(cs) = comment_start {
                     let (code, comment) = body.split_at(cs);
                     format!(
-                        "{}if {} then {} end{}\n",
+                        "{}if {} then {} end {}\n",
                         prefix,
                         cond,
                         code.trim_end(),
@@ -119,6 +119,22 @@ mod tests {
     fn test_shorthand_if_rewrite() {
         let lua = "if (not b) i = 1\n";
         let expected = "if not b then i = 1 end\n";
+        let patched = patch_lua(lua);
+        assert_eq!(patched, expected);
+    }
+
+    #[test]
+    fn test_shorthand_if_rewrite_comment() {
+        let lua = "if (not b) i = 1 // hi\n";
+        let expected = "if not b then i = 1 end -- hi\n";
+        let patched = patch_lua(lua);
+        assert_eq!(patched, expected);
+    }
+
+    #[test]
+    fn test_shorthand_if_rewrite_and() {
+        let lua = "if (not b and not c) i = 1\n";
+        let expected = "if not b and not c then i = 1 end\n";
         let patched = patch_lua(lua);
         assert_eq!(patched, expected);
     }
