@@ -51,18 +51,12 @@ fn main() -> Result<(), io::Error> {
         input
     };
 
-    let mut out_str = patch_lua(pico8_lua).unwrap();
+    let out_str = patch_lua(pico8_lua).unwrap();
     if is_p8_file && !output_lua_only {
-        out_str = format!("{}__lua__\n{}", before_lua.unwrap_or("".into()), out_str);
+        print!("{}__lua__\n{}", before_lua.unwrap_or("".into()), out_str);
         if after_lua.is_some() {
-            out_str.push_str(&format!("__gfx__{}", after_lua.unwrap()));
+            print!("__gfx__{}", after_lua.unwrap());
         }
     }
-
-    if out_str.ends_with('\n') {
-        out_str.pop();
-    }
-
-    println!("{}", out_str);
     Ok(())
 }

@@ -8,46 +8,36 @@
 /// Modified 2019 code from
 /// [here](https://github.com/benwiley4000/pico8-to-lua/blob/master/pico8-to-lua.lua).
 ///
-/// Licensed under the Zlib license:
-///
-/// This software is provided 'as-is', without any express or implied
-/// warranty. In no event will the authors be held liable for any damages
-/// arising from the use of this software.
-///
-/// Permission is granted to anyone to use this software for any purpose,
-/// including commercial applications, and to alter it and redistribute it
-/// freely, subject to the following restrictions:
-///
-/// 1. The origin of this software must not be misrepresented; you must not
-///    claim that you wrote the original software. If you use this software
-///    in a product, an acknowledgement in the product documentation would be
-///    appreciated but is not required.
-/// 2. Altered source versions must be plainly marked as such, and must not be
-///    misrepresented as being the original software.
-/// 3. This notice may not be removed or altered from any source distribution.
-///
-use regex::Regex;
+/// Licensed under the Zlib license.
+use regex::{Regex, Replacer};
+use regex_macro::regex;
+use std::borrow::Cow;
+
+// https://stackoverflow.com/a/79268946/6454690
+fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
+    let new = regex.replace_all(s, replacer);
+    if let Cow::Owned(o) = new {
+        *s = Cow::Owned(o);
+    } // Otherwise, no change was made.
+}
 
 /// Given a string with the Pico-8 dialect of Lua, it will attempt to convert
 /// that code to plain Lua or return a regex error.
-pub fn patch_lua(mut lua: String) -> Result<String, regex::Error> {
+pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, regex::Error> {
+    let mut lua = lua.into();
     // Replace != with ~=
-    lua = lua.replace("!=", "~=");
+    replace_all_in_place(regex!(r"!="), &mut lua, "~=");
 
     // Replace // with --
-    lua = lua.replace("//", "--");
+    replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
     // Rewrite shorthand if statements
-    let re_if = Regex::new(r"(?m)^(\s*)if\s*\(([^)]*)\)\s*([^\n]*)\n")?;
-    lua = re_if
-        .replace_all(&lua, |caps: &regex::Captures| {
+    replace_all_in_place(regex!(r"(?m)^(\s*)if\s*\(([^)]*)\)\s*([^\n]*)\n"), &mut lua, |caps: &regex::Captures| {
             let prefix = &caps[1];
             let cond = &caps[2];
             let body = &caps[3];
             let comment_start = body.find("--");
-            let has_keywords = ["then", "and", "or"]
-                .iter()
-                .any(|&kw| Regex::new(&format!(r"\b{}\b", kw)).unwrap().is_match(body));
+            let has_keywords = regex!(r"\b(then|and|or)\b").is_match(body);
 
             if !has_keywords {
                 if let Some(cs) = comment_start {
@@ -65,21 +55,16 @@ pub fn patch_lua(mut lua: String) -> Result<String, regex::Error> {
             } else {
                 caps[0].to_string()
             }
-        })
-        .to_string();
+        });
 
     // Rewrite assignment operators (+=, -=, etc.)
-    let re_op = Regex::new(r"(\S+)\s*([+\-*/%])=")?;
-    lua = re_op.replace_all(&lua, "$1 = $1 $2").to_string();
+    replace_all_in_place(regex!(r"(\S+)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
 
     // Replace "?expr" with "print(expr)"
-    let re_print = Regex::new(r"(?m)^(\s*)\?([^\n\r]+)")?;
-    lua = re_print.replace_all(&lua, "${1}print($2)").to_string();
+    replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
 
     // Convert binary literals to hex literals
-    let re_bin = Regex::new(r"([^[:alnum:]_])0[bB]([01.]+)")?;
-    lua = re_bin
-        .replace_all(&lua, |caps: &regex::Captures| {
+    replace_all_in_place(regex!(r"([^[:alnum:]_])0[bB]([01.]+)"), &mut lua, |caps: &regex::Captures| {
             let prefix = &caps[1];
             let bin = &caps[2];
             let mut parts = bin.split('.');
@@ -100,19 +85,18 @@ pub fn patch_lua(mut lua: String) -> Result<String, regex::Error> {
                 (Some(i), None) => format!("{}0x{:x}", prefix, i),
                 _ => caps[0].to_string(),
             }
-        })
-        .to_string();
+        });
     Ok(lua)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::patch_lua;
+    use super::*;
 
     #[test]
     fn test_not_equal_replacement() -> Result<(), regex::Error> {
         let lua = "if a != b then print(a) end";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert!(patched.contains("a ~= b"));
         Ok(())
     }
@@ -120,16 +104,16 @@ mod tests {
     #[test]
     fn test_comment_replacement() -> Result<(), regex::Error> {
         let lua = "// this is a comment\nprint('hello')";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert!(patched.contains("-- this is a comment"));
         Ok(())
     }
 
     #[test]
     fn test_shorthand_if_rewrite() -> Result<(), regex::Error> {
-        let lua = "\nif (not b) i = 1\n";
+        let lua = "if (not b) i = 1\n";
         let expected = "if not b then i = 1 end\n";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert_eq!(patched, expected);
         Ok(())
     }
@@ -137,7 +121,7 @@ mod tests {
     #[test]
     fn test_assignment_operator_rewrite() -> Result<(), regex::Error> {
         let lua = "x += 1";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert_eq!(patched.trim(), "x = x + 1");
         Ok(())
     }
@@ -145,7 +129,7 @@ mod tests {
     #[test]
     fn test_question_print_conversion0() -> Result<(), regex::Error> {
         let lua = "?x";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert_eq!(patched.trim(), "print(x)");
         Ok(())
     }
@@ -153,7 +137,7 @@ mod tests {
     #[test]
     fn test_question_print_conversion() -> Result<(), regex::Error> {
         let lua = "?x + y";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert_eq!(patched.trim(), "print(x + y)");
         Ok(())
     }
@@ -161,7 +145,7 @@ mod tests {
     #[test]
     fn test_binary_literal_conversion_integer() -> Result<(), regex::Error> {
         let lua = "a = 0b1010";
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert_eq!(patched.trim(), "a = 0xa");
         Ok(())
     }
@@ -169,8 +153,8 @@ mod tests {
     #[test]
     fn test_binary_literal_conversion_fractional() -> Result<(), regex::Error> {
         let lua = "a = 0b1010.1";
-        let patched = patch_lua(lua.to_string())?;
-        assert_eq!(patched.trim(), "a = 0xA.8");
+        let patched = patch_lua(lua)?;
+        assert_eq!(patched.trim(), "a = 0xa.8");
         Ok(())
     }
 
@@ -181,7 +165,7 @@ mod tests {
         if (a != b) x += 1
         ?x
         "#;
-        let patched = patch_lua(lua.to_string())?;
+        let patched = patch_lua(lua)?;
         assert!(patched.contains("-- comment"), "{}", patched);
         assert!(
             patched.contains("if a ~= b then x = x + 1 end"),
@@ -189,6 +173,30 @@ mod tests {
             patched
         );
         assert!(patched.contains("print(x)"), "{}", patched);
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_change_no_allocation() -> Result<(), regex::Error> {
+        let lua = "x = 1";
+        let patched = patch_lua(lua)?;
+        // assert!(patched.is_borrowed());
+        assert!(match patched {
+            Cow::Owned(_) => false,
+            Cow::Borrowed(_) => true,
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_change_requires_allocation() -> Result<(), regex::Error> {
+        let lua = "x += 1";
+        let patched = patch_lua(lua)?;
+        // assert!(patched.is_owned());
+        assert!(match patched {
+            Cow::Owned(_) => true,
+            Cow::Borrowed(_) => false,
+        });
         Ok(())
     }
 }
