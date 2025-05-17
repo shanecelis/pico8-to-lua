@@ -51,7 +51,7 @@ fn main() -> Result<(), io::Error> {
         input
     };
 
-    let out_str = patch_lua(pico8_lua).unwrap();
+    let out_str = patch_lua(pico8_lua);
     if is_p8_file && !output_lua_only {
         print!("{}__lua__\n{}", before_lua.unwrap_or("".into()), out_str);
         if after_lua.is_some() {
