@@ -47,6 +47,15 @@ pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve
     error.unwrap_or(Ok(lua))
 }
 
+/// Returns true if the patch_output was patched by testing whether it is
+/// `Cow::Owned`; a `Cow::Borrowed` implies it was not patched.
+pub fn was_patched<'h>(patch_output: &Cow<'h, str>) -> bool {
+    match patch_output {
+        Cow::Owned(_) => true,
+        Cow::Borrowed(_) => false,
+    }
+}
+
 /// Resolve the Pico-8 "#include path.p8" statements without possible error.
 pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> String) -> Cow<'h, str>  {
     let mut lua = lua.into();
