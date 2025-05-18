@@ -82,6 +82,23 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     // Replace // with --.
     replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
+    // Replace unicode symbols for buttons.
+    replace_all_in_place(regex!(r"(btnp?)\(\s*(\S+)\s*\)"), &mut lua,
+        |caps: &regex::Captures| {
+            let func = &caps[1];
+            let symbol = caps[2].trim_end_matches("\u{fe0f}");
+            let sub = match symbol {
+                "⬅" => "0",
+                "➡" => "1",
+                "⬆" => "2",
+                "⬇" => "3",
+                "🅾️" => "4",
+                "❎" => "5",
+                x => x,
+            };
+            format!("{func}({sub})")
+        });
+
     // Rewrite shorthand if statements.
     //
     // This is why using regex is not a great tool for parsing but because we
@@ -123,8 +140,9 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
         },
     );
 
+
     // Rewrite assignment operators (+=, -=, etc.).
-    replace_all_in_place(regex!(r"(\S+)\s*[^-]([+\-*/%])="), &mut lua, "$1 = $1 $2");
+    replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
 
     // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
@@ -297,4 +315,26 @@ mod tests {
         let patched = patch_lua(lua);
         assert_eq!(patched.trim(), "if ord(tb.str[tb.i],tb.char)~=32 then sfx(tb.voice) end -- play the voice sound effect.");
     }
+
+    #[test]
+    fn test_bad_incr() {
+        let lua = "tb.i+=1 -- increase the index, to display the next message on tb.str";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "tb.i = tb.i +1 -- increase the index, to display the next message on tb.str");
+    }
+
+    #[test]
+    fn test_button() {
+        let lua = "if btnp(➡️) or btn(❎) then";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "if btnp(1) or btn(5) then");
+    }
+
+    #[test]
+    fn test_button2() {
+        let lua = "if btnp(❎) then";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "if btnp(5) then");
+    }
+
 }
