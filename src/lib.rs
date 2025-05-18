@@ -90,9 +90,10 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
             let cond = &caps[2];
             let body = &caps[3];
             let comment_start = body.find("--");
+            let has_left_paren = cond.contains("(");
             let has_keywords = regex!(r"\b(then|and|or)\b").is_match(body);
 
-            if !has_keywords {
+            if !has_left_paren && !has_keywords {
                 if let Some(cs) = comment_start {
                     let (code, comment) = body.split_at(cs);
                     format!(
@@ -277,5 +278,12 @@ mod tests {
         let lua = "--==configurations==--";
         let patched = patch_lua(lua);
         assert_eq!(patched.trim(), "--==configurations==--");
+    }
+
+    #[test]
+    fn test_bad_if() {
+        let lua = "if (ord(tb.str[tb.i],tb.char)!=32) sfx(tb.voice) -- play the voice sound effect.";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "if ord(tb.str[tb.i],tb.char)~=32 then sfx(tb.voice) end -- play the voice sound effect.");
     }
 }
