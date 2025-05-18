@@ -22,6 +22,8 @@ fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replac
 }
 
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
+///
+/// If there are substitution errors, the first error will be returned.
 pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> Result<String, E>) -> Result<Cow<'h, str>, E> {
     let mut lua = lua.into();
     let mut error = None;
@@ -31,17 +33,21 @@ pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve
             match resolve(&caps[1]) {
                 Ok(s) => s,
                 Err(e) => {
+                    // This is kind of pointless since the user will never get
+                    // access to the string. I'm leaving here incase the results
+                    // change to make it relevant later.
+                    let result = format!("error(\"failed to include {:?}: {}\")", &caps[1], &e);
                     if error.is_none() {
-                        error = Some(e)
+                        error = Some(Err(e))
                     }
-                    format!("error(\"failed to include {}: {}\")", &caps[1], &e)
+                    result
                 }
             }
         });
-    Ok(lua)
+    error.unwrap_or(Ok(lua))
 }
 
-/// Resolve the Pico-8 "#include path.p8" statements.
+/// Resolve the Pico-8 "#include path.p8" statements without possible error.
 pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> String) -> Cow<'h, str>  {
     let mut lua = lua.into();
     replace_all_in_place(regex!(r"#include\s+(\S+)"), &mut lua,
@@ -51,17 +57,22 @@ pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(
     lua
 }
 
-/// Given a string with the Pico-8 dialect of Lua, it will attempt to convert
-/// that code to plain Lua or return a regex error.
+/// Given a string with the Pico-8 dialect of Lua, it will convert that code to
+/// plain Lua.
+///
+/// NOTE: This is not a full language parser, but a series of regular
+/// expressions, so it is not guaranteed to work with every valid Pico-8
+/// expression. But if it does not work, please file an issue with the failing
+/// expression.
 pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     let mut lua = lua.into();
-    // Replace != with ~=
+    // Replace != with ~=.
     replace_all_in_place(regex!(r"!="), &mut lua, "~=");
 
-    // Replace // with --
+    // Replace // with --.
     replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
-    // Rewrite shorthand if statements
+    // Rewrite shorthand if statements.
     replace_all_in_place(
         regex!(r"(?m)^(\s*)if\s*\(([^)]*)\)\s*([^\n]*)\n"),
         &mut lua,
@@ -91,13 +102,13 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
         },
     );
 
-    // Rewrite assignment operators (+=, -=, etc.)
+    // Rewrite assignment operators (+=, -=, etc.).
     replace_all_in_place(regex!(r"(\S+)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
 
-    // Replace "?expr" with "print(expr)"
+    // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
 
-    // Convert binary literals to hex literals
+    // Convert binary literals to hex literals.
     replace_all_in_place(
         regex!(r"([^[:alnum:]_])0[bB]([01.]+)"),
         &mut lua,
@@ -249,6 +260,6 @@ mod tests {
         #include blah.p8
         "#;
         let patched = patch_includes(lua, |path| format!("-- INCLUDE {}", path));
-        assert!(patched.contains("-- INCLUDE"));
+        assert!(patched.contains("-- INCLUDE blah.p8"));
     }
 }
