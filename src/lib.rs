@@ -12,6 +12,7 @@
 use regex::{Regex, Replacer};
 use lazy_regex::regex;
 use std::{error::Error, borrow::Cow};
+use find_matching_bracket::find_matching_paren;
 
 // https://stackoverflow.com/a/79268946/6454690
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
@@ -82,29 +83,39 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
     // Rewrite shorthand if statements.
+    //
+    // This is why using regex is not a great tool for parsing but because we
+    // only need to match one line, we find the matching parenthesis and move on.
     replace_all_in_place(
-        regex!(r"(?m)^(\s*)if\s*\(([^)]*)\)\s*([^\n]*)\n"),
+        regex!(r"(?m)^(\s*)if\s*(\(([^)]*)\)\s*([^\n]*))$"),
         &mut lua,
         |caps: &regex::Captures| {
             let prefix = &caps[1];
-            let cond = &caps[2];
-            let body = &caps[3];
-            let comment_start = body.find("--");
+            let line = &caps[2];
+            let mut cond = &caps[3];
+            let mut body = &caps[4];
             let has_left_paren = cond.contains("(");
             let has_keywords = regex!(r"\b(then|and|or)\b").is_match(body);
 
-            if !has_left_paren && !has_keywords {
+            if has_left_paren {
+                if let Some(index) = find_matching_paren(line, 0) {
+                    cond = &line[1..index];
+                    body = &line[index+1..].trim_start();
+                }
+            }
+            let comment_start = body.find("--");
+            if !has_keywords {
                 if let Some(cs) = comment_start {
                     let (code, comment) = body.split_at(cs);
                     format!(
-                        "{}if {} then {} end {}\n",
+                        "{}if {} then {} end {}",
                         prefix,
                         cond,
                         code.trim_end(),
                         comment
                     )
                 } else {
-                    format!("{}if {} then {} end\n", prefix, cond, body)
+                    format!("{}if {} then {} end", prefix, cond, body)
                 }
             } else {
                 caps[0].to_string()
