@@ -92,7 +92,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
                 "➡" => "1",
                 "⬆" => "2",
                 "⬇" => "3",
-                "🅾️" => "4",
+                "🅾" => "4",
                 "❎" => "5",
                 x => x,
             };
@@ -335,6 +335,13 @@ mod tests {
         let lua = "if btnp(❎) then";
         let patched = patch_lua(lua);
         assert_eq!(patched.trim(), "if btnp(5) then");
+    }
+
+    #[test]
+    fn test_button3() {
+        let lua = "if btnp(🅾) then";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "if btnp(4) then");
     }
 
 }
