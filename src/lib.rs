@@ -28,7 +28,7 @@ pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve
     let mut lua = lua.into();
     let mut error = None;
 
-    replace_all_in_place(regex!(r"#include\s+(\S+)"), &mut lua,
+    replace_all_in_place(regex!(r"(?m)^\s*#include\s+(\S+)"), &mut lua,
         |caps: &regex::Captures| {
             match resolve(&caps[1]) {
                 Ok(s) => s,
@@ -50,7 +50,7 @@ pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve
 /// Resolve the Pico-8 "#include path.p8" statements without possible error.
 pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> String) -> Cow<'h, str>  {
     let mut lua = lua.into();
-    replace_all_in_place(regex!(r"#include\s+(\S+)"), &mut lua,
+    replace_all_in_place(regex!(r"(?m)^\s*#include\s+(\S+)"), &mut lua,
         |caps: &regex::Captures| {
             resolve(&caps[1])
         });
@@ -103,7 +103,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     );
 
     // Rewrite assignment operators (+=, -=, etc.).
-    replace_all_in_place(regex!(r"(\S+)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
+    replace_all_in_place(regex!(r"(\S+)\s*[^-]([+\-*/%])="), &mut lua, "$1 = $1 $2");
 
     // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
@@ -260,6 +260,13 @@ mod tests {
         #include blah.p8
         "#;
         let patched = patch_includes(lua, |path| format!("-- INCLUDE {}", path));
-        assert!(patched.contains("-- INCLUDE blah.p8"));
+        assert!(patched.contains("-- INCLUDE blah.p8"), "{}", &patched);
+    }
+
+    #[test]
+    fn test_bad_comment() {
+        let lua = "--==configurations==--";
+        let patched = patch_lua(lua);
+        assert_eq!(patched.trim(), "--==configurations==--");
     }
 }
