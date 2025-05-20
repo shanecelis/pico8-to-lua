@@ -10,9 +10,9 @@
 ///
 /// Licensed under the Zlib license.
 use regex::{Regex, Replacer};
-use lazy_regex::regex;
-use std::{error::Error, borrow::Cow};
+use std::{borrow::Cow, error::Error};
 use find_matching_bracket::find_matching_paren;
+use lazy_regex::regex;
 
 // https://stackoverflow.com/a/79268946/6454690
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
@@ -25,11 +25,16 @@ fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replac
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
 ///
 /// If there are substitution errors, the first error will be returned.
-pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> Result<String, E>) -> Result<Cow<'h, str>, E> {
+pub fn try_patch_includes<'h, E: Error>(
+    lua: impl Into<Cow<'h, str>>,
+    mut resolve: impl FnMut(&str) -> Result<String, E>,
+) -> Result<Cow<'h, str>, E> {
     let mut lua = lua.into();
     let mut error = None;
 
-    replace_all_in_place(regex!(r"(?m)^\s*#include\s+(\S+)"), &mut lua,
+    replace_all_in_place(
+        regex!(r"(?m)^\s*#include\s+(\S+)"),
+        &mut lua,
         |caps: &regex::Captures| {
             match resolve(&caps[1]) {
                 Ok(s) => s,
@@ -44,7 +49,8 @@ pub fn try_patch_includes<'h, E:Error>(lua: impl Into<Cow<'h, str>>, mut resolve
                     result
                 }
             }
-        });
+        },
+    );
     error.unwrap_or(Ok(lua))
 }
 
@@ -58,12 +64,16 @@ pub fn was_patched<'h>(patch_output: &Cow<'h, str>) -> bool {
 }
 
 /// Resolve the Pico-8 "#include path.p8" statements without possible error.
-pub fn patch_includes<'h>(lua: impl Into<Cow<'h, str>>, mut resolve: impl FnMut(&str) -> String) -> Cow<'h, str>  {
+pub fn patch_includes<'h>(
+    lua: impl Into<Cow<'h, str>>,
+    mut resolve: impl FnMut(&str) -> String,
+) -> Cow<'h, str> {
     let mut lua = lua.into();
-    replace_all_in_place(regex!(r"(?m)^\s*#include\s+(\S+)"), &mut lua,
-        |caps: &regex::Captures| {
-            resolve(&caps[1])
-        });
+    replace_all_in_place(
+        regex!(r"(?m)^\s*#include\s+(\S+)"),
+        &mut lua,
+        |caps: &regex::Captures| resolve(&caps[1]),
+    );
     lua
 }
 
@@ -83,7 +93,9 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
     // Replace unicode symbols for buttons.
-    replace_all_in_place(regex!(r"(btnp?)\(\s*(\S+)\s*\)"), &mut lua,
+    replace_all_in_place(
+        regex!(r"(btnp?)\(\s*(\S+)\s*\)"),
+        &mut lua,
         |caps: &regex::Captures| {
             let func = &caps[1];
             let symbol = caps[2].trim_end_matches("\u{fe0f}");
@@ -97,7 +109,8 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
                 x => x,
             };
             format!("{func}({sub})")
-        });
+        },
+    );
 
     // Rewrite shorthand if statements.
     //
@@ -115,7 +128,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
             }
             if let Some(index) = find_matching_paren(line, 0) {
                 let cond = &line[1..index];
-                let body = &line[index+1..].trim_start();
+                let body = &line[index + 1..].trim_start();
                 let comment_start = body.find("--");
                 if let Some(cs) = comment_start {
                     let (code, comment) = body.split_at(cs);
@@ -131,11 +144,9 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
                 }
             } else {
                 caps[0].to_string()
-
             }
         },
     );
-
 
     // Rewrite assignment operators (+=, -=, etc.).
     // replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+)"), &mut lua, "$1 = $1 $2 ($3)");
@@ -308,16 +319,23 @@ mod tests {
 
     #[test]
     fn test_bad_if() {
-        let lua = "if (ord(tb.str[tb.i],tb.char)!=32) sfx(tb.voice) -- play the voice sound effect.";
+        let lua =
+            "if (ord(tb.str[tb.i],tb.char)!=32) sfx(tb.voice) -- play the voice sound effect.";
         let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "if ord(tb.str[tb.i],tb.char)~=32 then sfx(tb.voice) end -- play the voice sound effect.");
+        assert_eq!(
+            patched.trim(),
+            "if ord(tb.str[tb.i],tb.char)~=32 then sfx(tb.voice) end -- play the voice sound effect."
+        );
     }
 
     #[test]
     fn test_bad_incr() {
         let lua = "tb.i+=1 -- increase the index, to display the next message on tb.str";
         let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "tb.i = tb.i +1 -- increase the index, to display the next message on tb.str");
+        assert_eq!(
+            patched.trim(),
+            "tb.i = tb.i +1 -- increase the index, to display the next message on tb.str"
+        );
     }
 
     #[test]
@@ -348,50 +366,54 @@ mod tests {
 
     #[test]
     fn test_cardboard_toad0() {
-        assert_patch("if (o.color) setmetatable(o.color, { __index = (message_instance or message).color })",
-                     "if o.color then setmetatable(o.color, { __index = (message_instance or message).color }) end");
+        assert_patch(
+            "if (o.color) setmetatable(o.color, { __index = (message_instance or message).color })",
+            "if o.color then setmetatable(o.color, { __index = (message_instance or message).color }) end",
+        );
     }
 
     #[test]
     fn test_cardboard_toad1() {
         assert_patch(
-r#"
+            r#"
 if ((abs(x) < (a.w+a2.w)) and
     (abs(y) < (a.h+a2.h)))
     then "hi" end
 "#,
-r#"
+            r#"
 if ((abs(x) < (a.w+a2.w)) and
     (abs(y) < (a.h+a2.h)))
     then "hi" end
-"#);
+"#,
+        );
     }
 
     #[test]
     fn test_cardboard_toad2() {
         assert_patch(
-r#"
+            r#"
  if (self.sprites ~= nil) then
   self.sprite = self.sprites[self.sprites_index]
  end
 "#,
-r#"
+            r#"
  if (self.sprites ~= nil) then
   self.sprite = self.sprites[self.sprites_index]
  end
-"#);
+"#,
+        );
     }
 
     #[test]
     fn test_cardboard_toad3() {
         // This is a bug.
-        assert_patch("accum += f.delay or self.delay",
-                     "accum = accum + f.delay or self.delay");
+        assert_patch(
+            "accum += f.delay or self.delay",
+            "accum = accum + f.delay or self.delay",
+        );
 
         // It should actually do this, but the corner cases are too many.
         // assert_patch("accum += f.delay or self.delay",
         //              "accum = accum + (f.delay or self.delay)");
     }
-
-
 }
