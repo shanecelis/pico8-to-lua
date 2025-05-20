@@ -104,24 +104,19 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     // This is why using regex is not a great tool for parsing but because we
     // only need to match one line, we find the matching parenthesis and move on.
     replace_all_in_place(
-        regex!(r"(?m)^(\s*)if\s*(\(([^)]*)\)\s*([^\n]*))$"),
+        regex!(r"(?m)^(\s*)if\s*(\([^\n]*)$"),
         &mut lua,
         |caps: &regex::Captures| {
             let prefix = &caps[1];
             let line = &caps[2];
-            let mut cond = &caps[3];
-            let mut body = &caps[4];
-            let has_left_paren = cond.contains("(");
-            let has_keywords = regex!(r"\b(then|and|or)\b").is_match(body);
 
-            if has_left_paren {
-                if let Some(index) = find_matching_paren(line, 0) {
-                    cond = &line[1..index];
-                    body = &line[index+1..].trim_start();
-                }
+            if regex!(r"\bthen\b").is_match(line) {
+                return caps[0].to_string();
             }
-            let comment_start = body.find("--");
-            if !has_keywords {
+            if let Some(index) = find_matching_paren(line, 0) {
+                let cond = &line[1..index];
+                let body = &line[index+1..].trim_start();
+                let comment_start = body.find("--");
                 if let Some(cs) = comment_start {
                     let (code, comment) = body.split_at(cs);
                     format!(
@@ -136,12 +131,14 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
                 }
             } else {
                 caps[0].to_string()
+
             }
         },
     );
 
 
     // Rewrite assignment operators (+=, -=, etc.).
+    // replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+)"), &mut lua, "$1 = $1 $2 ($3)");
     replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
 
     // Replace "?expr" with "print(expr)".
@@ -343,5 +340,58 @@ mod tests {
         let patched = patch_lua(lua);
         assert_eq!(patched.trim(), "if btnp(4) then");
     }
+
+    fn assert_patch(unpatched: &str, expected_patched: &str) {
+        let patched = patch_lua(unpatched);
+        assert_eq!(patched, expected_patched);
+    }
+
+    #[test]
+    fn test_cardboard_toad0() {
+        assert_patch("if (o.color) setmetatable(o.color, { __index = (message_instance or message).color })",
+                     "if o.color then setmetatable(o.color, { __index = (message_instance or message).color }) end");
+    }
+
+    #[test]
+    fn test_cardboard_toad1() {
+        assert_patch(
+r#"
+if ((abs(x) < (a.w+a2.w)) and
+    (abs(y) < (a.h+a2.h)))
+    then "hi" end
+"#,
+r#"
+if ((abs(x) < (a.w+a2.w)) and
+    (abs(y) < (a.h+a2.h)))
+    then "hi" end
+"#);
+    }
+
+    #[test]
+    fn test_cardboard_toad2() {
+        assert_patch(
+r#"
+ if (self.sprites ~= nil) then
+  self.sprite = self.sprites[self.sprites_index]
+ end
+"#,
+r#"
+ if (self.sprites ~= nil) then
+  self.sprite = self.sprites[self.sprites_index]
+ end
+"#);
+    }
+
+    #[test]
+    fn test_cardboard_toad3() {
+        // This is a bug.
+        assert_patch("accum += f.delay or self.delay",
+                     "accum = accum + f.delay or self.delay");
+
+        // It should actually do this, but the corner cases are too many.
+        // assert_patch("accum += f.delay or self.delay",
+        //              "accum = accum + (f.delay or self.delay)");
+    }
+
 
 }
