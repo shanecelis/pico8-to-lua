@@ -149,8 +149,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     );
 
     // Rewrite assignment operators (+=, -=, etc.).
-    // replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+)"), &mut lua, "$1 = $1 $2 ($3)");
-    replace_all_in_place(regex!(r"([^-\s]\S*)\s*([+\-*/%])="), &mut lua, "$1 = $1 $2");
+    replace_all_in_place(regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\bend|\belse|;|--|$))"), &mut lua, "$1 = $1 $2 ($3)$4");
 
     // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
@@ -231,7 +230,7 @@ mod tests {
     fn test_assignment_operator_rewrite() {
         let lua = "x += 1";
         let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "x = x + 1");
+        assert_eq!(patched.trim(), "x = x + (1)");
     }
 
     #[test]
@@ -272,7 +271,7 @@ mod tests {
         let patched = patch_lua(lua);
         assert!(patched.contains("-- comment"), "{}", patched);
         assert!(
-            patched.contains("if a ~= b then x = x + 1 end"),
+            patched.contains("if a ~= b then x = x + (1) end"),
             "{}",
             patched
         );
@@ -334,7 +333,7 @@ mod tests {
         let patched = patch_lua(lua);
         assert_eq!(
             patched.trim(),
-            "tb.i = tb.i +1 -- increase the index, to display the next message on tb.str"
+            "tb.i = tb.i + (1) -- increase the index, to display the next message on tb.str"
         );
     }
 
@@ -407,13 +406,35 @@ if ((abs(x) < (a.w+a2.w)) and
     #[test]
     fn test_cardboard_toad3() {
         // This is a bug.
-        assert_patch(
-            "accum += f.delay or self.delay",
-            "accum = accum + f.delay or self.delay",
-        );
+        // assert_patch(
+        //     "accum += f.delay or self.delay",
+        //     "accum = accum + f.delay or self.delay",
+        // );
 
         // It should actually do this, but the corner cases are too many.
-        // assert_patch("accum += f.delay or self.delay",
-        //              "accum = accum + (f.delay or self.delay)");
+        assert_patch("accum += f.delay or self.delay",
+                     "accum = accum + (f.delay or self.delay)");
+
+        assert_patch("if true then accum += f.delay or self.delay end",
+                     "if true then accum = accum + (f.delay or self.delay) end");
+    }
+
+    #[test]
+    fn test_pooh_big_adventure0() {
+        assert_patch("if btnp(3) then self.choice += 1; result = true end",
+                     "if btnp(3) then self.choice = self.choice + (1); result = true end");
+
+        assert_patch("       i += 1",
+                     "       i = i + (1)");
+    }
+
+    #[test]
+    fn test_plist0() {
+        let lua = r#"
+i += 1
+local key = keys[i]
+"#;
+        let patched = patch_lua(lua);
+        assert!(patched.contains("i = i + (1)"));
     }
 }
