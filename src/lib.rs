@@ -77,6 +77,14 @@ pub fn patch_includes<'h>(
     lua
 }
 
+/// Return each path from the the Pico-8 "#include path.p8" statements.
+pub fn find_includes<'h>(
+    lua: &'h str,
+) -> impl Iterator<Item = String> {
+    regex!(r"(?m)^\s*#include\s+(\S+)").captures_iter(&lua)
+        .map(|caps: regex::Captures| caps[1].to_string())
+}
+
 /// Given a string with the Pico-8 dialect of Lua, it will convert that code to
 /// plain Lua.
 ///
@@ -436,5 +444,15 @@ local key = keys[i]
 "#;
         let patched = patch_lua(lua);
         assert!(patched.contains("i = i + (1)"));
+    }
+
+    #[test]
+    fn test_find_includes() {
+
+        let lua = r#"
+#include a.p8
+#include b.lua
+"#;
+        assert_eq!(find_includes(&lua).collect::<Vec<_>>(), vec!["a.p8", "b.lua"]);
     }
 }
