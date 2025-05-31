@@ -1,7 +1,19 @@
 [package]
 name = "pico8-to-lua"
+description = "Converts Pico-8's dialect of Lua to plain Lua"
 version = "0.1.0"
 edition = "2024"
+authors = ["Shane Celis <shane.celis@gmail.com>"]
+keywords = [
+    "pico-8",
+    "gamedev",
+]
+categories = [
+    "game-development"
+]
+readme = "README.md"
+license = "Zlib"
+repository = "https://github.com/shanecelis/pico8-to-lua"
 
 [dependencies]
 find-matching-bracket = "0.2.0"
