@@ -2,7 +2,34 @@
 
 A library and command line tool to convert Pico-8's dialect of Lua to plain Lua. 
 
-## Example
+## Installation
+
+### As a library
+
+``` sh
+cargo add pico8-to-lua
+```
+
+### As a command line tool
+
+``` sh
+cargo install pico8-to-lua
+```
+
+## Examples
+
+### Patch a cart
+
+``` sh
+pico8-to-lua cart.p8 > patched-cart.p8
+```
+
+### Patch stdin
+
+``` sh
+echo "if (true) x+= 1" | pico8-to-lua -
+if true then x = x + (1) end
+```
 
 ### Patch the Code
 ``` rust
