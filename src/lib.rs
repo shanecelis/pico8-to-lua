@@ -58,7 +58,8 @@ pub fn try_patch_includes<'h, E: Error>(
 
 /// Returns true if the patch_output was patched by testing whether it is
 /// `Cow::Owned`; a `Cow::Borrowed` implies it was not patched.
-pub fn was_patched<'h>(patch_output: &Cow<'h, str>) -> bool {
+#[allow(clippy::ptr_arg)]
+pub fn was_patched(patch_output: &Cow<'_, str>) -> bool {
     match patch_output {
         Cow::Owned(_) => true,
         Cow::Borrowed(_) => false,
@@ -85,10 +86,10 @@ pub fn patch_includes<'h>(
 /// synchronously using [patch_includes] or [try_patch_includes]. However, in an
 /// asynchronous IO context, it is often necessary to read in the contents
 /// before patching the includes.
-pub fn find_includes<'h>(
-    lua: &'h str,
+pub fn find_includes(
+    lua: &str,
 ) -> impl Iterator<Item = String> {
-    regex!(r"(?m)^\s*#include\s+(\S+)").captures_iter(&lua)
+    regex!(r"(?m)^\s*#include\s+(\S+)").captures_iter(lua)
         .map(|caps: regex::Captures| caps[1].to_string())
 }
 
@@ -464,6 +465,6 @@ local key = keys[i]
 #include a.p8
 #include b.lua
 "#;
-        assert_eq!(find_includes(&lua).collect::<Vec<_>>(), vec!["a.p8", "b.lua"]);
+        assert_eq!(find_includes(lua).collect::<Vec<_>>(), vec!["a.p8", "b.lua"]);
     }
 }
