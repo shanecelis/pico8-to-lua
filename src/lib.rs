@@ -1,3 +1,5 @@
+#![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.1.0")]
+#![doc = include_str!("../README.md")]
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
 /// Modified (c) 2019 Ben Wiley <therealbenwiley@gmail.com>
 /// Modified (c) 2025 Shane Celis <shane.celis@gmail.com>
@@ -78,6 +80,11 @@ pub fn patch_includes<'h>(
 }
 
 /// Return each path from the the Pico-8 "#include path.p8" statements.
+///
+/// This function is not strictly necessary if one can read the includes
+/// synchronously using [patch_includes] or [try_patch_includes]. However, in an
+/// asynchronous IO context, it is often necessary to read in the contents
+/// before patching the includes.
 pub fn find_includes<'h>(
     lua: &'h str,
 ) -> impl Iterator<Item = String> {
@@ -87,6 +94,10 @@ pub fn find_includes<'h>(
 
 /// Given a string with the Pico-8 dialect of Lua, it will convert that code to
 /// plain Lua.
+///
+/// This function will not handle "#include path.p8" statements. It is
+/// recommended to use [patch_includes] before this function since if those
+/// inclusions may use the Pico-8 dialect.
 ///
 /// NOTE: This is not a full language parser, but a series of regular
 /// expressions, so it is not guaranteed to work with every valid Pico-8
