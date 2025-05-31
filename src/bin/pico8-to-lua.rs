@@ -57,6 +57,8 @@ fn main() -> Result<(), io::Error> {
         if after_lua.is_some() {
             print!("__gfx__{}", after_lua.unwrap());
         }
+    } else {
+        print!("{}", out_str);
     }
     Ok(())
 }
