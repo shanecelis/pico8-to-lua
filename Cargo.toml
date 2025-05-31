@@ -7,3 +7,6 @@ edition = "2024"
 find-matching-bracket = "0.2.0"
 lazy-regex = { version = "3.0", default-features = false, features = ["lite"] }
 regex-lite = "0.1.6"
+
+[dev-dependencies]
+version-sync = "0.9.5"
