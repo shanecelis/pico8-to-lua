@@ -474,4 +474,11 @@ local key = keys[i]
 "#;
         assert_eq!(find_includes(lua).collect::<Vec<_>>(), vec!["a.p8", "b.lua"]);
     }
+
+
+    #[test]
+    fn test_not_so_well0() {
+        assert_eq!(patch_lua("pos += (delta - thresh):map(function(v) return mid(0, v, 4) end)"),
+                "pos = pos + ((delta - thresh):map(function(v) return mid(0, v, 4) end))");
+    }
 }
