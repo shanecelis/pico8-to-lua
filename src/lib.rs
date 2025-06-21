@@ -169,7 +169,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     );
 
     // Rewrite assignment operators (+=, -=, etc.).
-    replace_all_in_place(regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\bend|\belse|;|--|$))"), &mut lua, "$1 = $1 $2 ($3)$4");
+    replace_all_in_place(regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\breturn|\bend|\belse|;|--|$))"), &mut lua, "$1 = $1 $2 ($3)$4");
 
     // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
@@ -438,6 +438,13 @@ if ((abs(x) < (a.w+a2.w)) and
         assert_patch("if true then accum += f.delay or self.delay end",
                      "if true then accum = accum + (f.delay or self.delay) end");
     }
+
+    #[test]
+    fn test_celeste0() {
+        assert_patch("if freeze>0 then freeze-=1 return end",
+                     "if freeze>0 then freeze = freeze - (1) return end");
+    }
+
 
     #[test]
     fn test_pooh_big_adventure0() {
