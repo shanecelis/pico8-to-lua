@@ -1,7 +1,7 @@
 [package]
 name = "pico8-to-lua"
 description = "Converts Pico-8's dialect of Lua to plain Lua"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Shane Celis <shane.celis@gmail.com>"]
 keywords = [
