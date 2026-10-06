@@ -18,6 +18,8 @@ repository = "https://github.com/shanecelis/pico8-to-lua"
 [dependencies]
 find-matching-bracket = "0.2.0"
 lazy-regex = { version = "3.0", default-features = false, features = ["lite"] }
+pest = "2.8"
+pest_derive = "2.8"
 regex-lite = "0.1.6"
 
 [dev-dependencies]

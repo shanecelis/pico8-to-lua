@@ -41,8 +41,9 @@ assert_eq!(patch_lua("x += 1"), "x = x + (1)");
 
 ``` rust
 use pico8_to_lua::patch_includes;
-fn comment_it(path: &str) -> String {
-    format!("-- INCLUDE '{}'", path)
+use std::borrow::Cow;
+fn comment_it(path: &str) -> Cow<'static, str> {
+    format!("-- INCLUDE '{}'", path).into()
 }
 assert_eq!(patch_includes("#include file.p8", comment_it), "-- INCLUDE 'file.p8'");
 ```
@@ -56,8 +57,7 @@ rotation operators: '>><' and '<<>'.
 
 ## Word of Caution
 
-Don't go trusting this too much because it is merely a collection of regular
-expressions and not a full blown language parser like it should be.
+`patch_lua` parses Pico-8 Lua and rewrites the dialect in place. A file that does not parse falls back to regular expressions.
 
 ## Origin
 

@@ -1,0 +1,227 @@
+// Pico-8 Lua. Newlines are whitespace, so ordinary multiline Lua parses.
+// Shorthand if/while is compound-atomic: only spaces and tabs, so the body
+// stops at the end of the line. `if expr then` is tried first.
+
+WHITESPACE = _{ " " | "\t" | "\r\n" | "\n" | "\r" }
+COMMENT = _{
+    "//" ~ (!("\r" | "\n") ~ ANY)* ~ ("\r\n" | "\n" | "\r")?
+  | "--" ~ long_brackets
+  | "--" ~ (!("\r" | "\n") ~ ANY)* ~ ("\r\n" | "\n" | "\r")?
+}
+
+hws = _{ " " | "\t" }
+ident_cont = _{ ASCII_ALPHANUMERIC | "_" }
+
+k_and = @{ "and" ~ !ident_cont }
+k_break = @{ "break" ~ !ident_cont }
+k_do = @{ "do" ~ !ident_cont }
+k_else = @{ "else" ~ !ident_cont }
+k_elseif = @{ "elseif" ~ !ident_cont }
+k_end = @{ "end" ~ !ident_cont }
+k_false = @{ "false" ~ !ident_cont }
+k_for = @{ "for" ~ !ident_cont }
+k_function = @{ "function" ~ !ident_cont }
+k_goto = @{ "goto" ~ !ident_cont }
+k_if = @{ "if" ~ !ident_cont }
+k_in = @{ "in" ~ !ident_cont }
+k_local = @{ "local" ~ !ident_cont }
+k_nil = @{ "nil" ~ !ident_cont }
+k_not = @{ "not" ~ !ident_cont }
+k_or = @{ "or" ~ !ident_cont }
+k_repeat = @{ "repeat" ~ !ident_cont }
+k_return = @{ "return" ~ !ident_cont }
+k_then = @{ "then" ~ !ident_cont }
+k_true = @{ "true" ~ !ident_cont }
+k_until = @{ "until" ~ !ident_cont }
+k_while = @{ "while" ~ !ident_cont }
+
+keyword = _{
+    k_and | k_break | k_do | k_else | k_elseif | k_end | k_false | k_for
+  | k_function | k_goto | k_if | k_in | k_local | k_nil | k_not | k_or
+  | k_repeat | k_return | k_then | k_true | k_until | k_while
+}
+
+name = @{ !keyword ~ (ASCII_ALPHA | "_") ~ ident_cont* }
+
+chunk = { SOI ~ block ~ EOI }
+block = { stmt* }
+
+stmt = {
+    ";"
+  | include
+  | if_stmt
+  | shorthand_if
+  | while_stmt
+  | shorthand_while
+  | repeat_stmt
+  | for_num
+  | for_in
+  | function_stmt
+  | local_function
+  | local_stmt
+  | do_stmt
+  | goto_stmt
+  | k_break
+  | label
+  | return_stmt
+  | compound_assign
+  | assign
+  | functioncall
+  | print_stmt
+}
+
+include = @{ "#" ~ hws* ~ "include" ~ (!("\r" | "\n") ~ ANY)* }
+
+if_stmt = {
+    k_if ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block
+    ~ (hws* ~ k_elseif ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block)*
+    ~ (hws* ~ k_else ~ hws* ~ block)?
+    ~ hws* ~ k_end
+}
+
+// `$` keeps child pairs and suppresses implicit whitespace, including newlines.
+shorthand_if = ${
+    k_if ~ hws* ~ "(" ~ hws* ~ expr ~ hws* ~ ")" ~ hws* ~ shorthand_body
+    ~ (hws* ~ k_else ~ hws* ~ shorthand_body)?
+}
+shorthand_while = ${
+    k_while ~ hws* ~ "(" ~ hws* ~ expr ~ hws* ~ ")" ~ hws* ~ shorthand_body
+}
+shorthand_body = { stmt ~ (hws* ~ stmt)* }
+
+while_stmt = { k_while ~ hws* ~ expr ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end }
+repeat_stmt = { k_repeat ~ hws* ~ block ~ hws* ~ k_until ~ hws* ~ expr }
+for_num = {
+    k_for ~ hws* ~ name ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr ~ hws* ~ "," ~ hws* ~ expr
+    ~ (hws* ~ "," ~ hws* ~ expr)? ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end
+}
+for_in = {
+    k_for ~ hws* ~ namelist ~ hws* ~ k_in ~ hws* ~ explist ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end
+}
+function_stmt = { k_function ~ hws* ~ funcname ~ hws* ~ funcbody }
+local_function = { k_local ~ hws* ~ k_function ~ hws* ~ name ~ hws* ~ funcbody }
+local_stmt = { k_local ~ hws* ~ namelist ~ (hws* ~ "=" ~ !"=" ~ hws* ~ explist)? }
+do_stmt = { k_do ~ hws* ~ block ~ hws* ~ k_end }
+goto_stmt = { k_goto ~ hws* ~ name }
+label = { "::" ~ hws* ~ name ~ hws* ~ "::" }
+return_stmt = { k_return ~ (hws* ~ explist)? ~ (hws* ~ ";")? }
+
+compound_assign = { var ~ hws* ~ compound_op ~ hws* ~ expr }
+assign = { varlist ~ hws* ~ "=" ~ !"=" ~ hws* ~ explist }
+print_stmt = { "?" ~ hws* ~ explist }
+
+varlist = { var ~ (hws* ~ "," ~ hws* ~ var)* }
+namelist = { name ~ (hws* ~ "," ~ hws* ~ name)* }
+explist = { expr ~ (hws* ~ "," ~ hws* ~ expr)* }
+
+funcname = { name ~ (hws* ~ "." ~ hws* ~ name)* ~ (hws* ~ ":" ~ hws* ~ name)? }
+funcbody = { "(" ~ hws* ~ parlist? ~ hws* ~ ")" ~ hws* ~ block ~ hws* ~ k_end }
+parlist = { namelist ~ (hws* ~ "," ~ hws* ~ "...")? | "..." }
+function_expr = { k_function ~ hws* ~ funcbody }
+
+// Lowest precedence first. `..` and `^` are right-associative.
+expr = { or_expr }
+or_expr = { and_expr ~ (hws* ~ k_or ~ hws* ~ and_expr)* }
+and_expr = { cmp_expr ~ (hws* ~ k_and ~ hws* ~ cmp_expr)* }
+cmp_expr = { bitor_expr ~ (hws* ~ cmp_op ~ hws* ~ bitor_expr)* }
+cmp_op = @{ "==" | "~=" | "!=" | "<=" | ">=" | "<" | ">" }
+bitor_expr = { bitxor_expr ~ (hws* ~ "|" ~ hws* ~ bitxor_expr)* }
+bitxor_expr = { bitand_expr ~ (hws* ~ "^^" ~ hws* ~ bitand_expr)* }
+bitand_expr = { shift_expr ~ (hws* ~ "&" ~ hws* ~ shift_expr)* }
+shift_expr = { concat_expr ~ (hws* ~ shift_op ~ hws* ~ concat_expr)* }
+shift_op = @{ "<<>" | ">><" | ">>>" | "<<" | ">>" }
+concat_expr = { add_expr ~ (hws* ~ ".." ~ !"." ~ hws* ~ concat_expr)? }
+add_expr = { mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
+add_op = @{ "+" ~ !"=" | "-" ~ !"=" }
+mul_expr = { unary ~ (hws* ~ mul_op ~ hws* ~ unary)* }
+mul_op = @{ "*" ~ !"=" | "/" ~ !"/" ~ !"=" | "%" ~ !"=" | "\\" ~ !"=" }
+unary = { (unary_op ~ hws* ~ unary) | pow_expr }
+unary_op = @{ k_not | "#" | "-" ~ !"=" | "~" ~ !"=" }
+pow_expr = { primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
+
+primary = {
+    k_nil | k_false | k_true
+  | number
+  | string
+  | "..."
+  | function_expr
+  | table
+  | prefix_exp
+  | button
+}
+
+prefix_exp = { functioncall | var | ("(" ~ hws* ~ expr ~ hws* ~ ")") }
+
+var = { name ~ dot_suffix* | ("(" ~ hws* ~ expr ~ hws* ~ ")") ~ dot_suffix+ }
+dot_suffix = { hws* ~ ("." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]") }
+
+// A repeat does not backtrack, so dots are consumed first and the required
+// call stays put. Otherwise `obj:step()` and `(e):map()` lose their call.
+functioncall = {
+    simple_prefix
+    ~ (hws* ~ dot_suffix_bare)*
+    ~ hws* ~ call_suffix
+    ~ (hws* ~ (dot_suffix_bare | call_suffix))*
+}
+simple_prefix = { name | ("(" ~ hws* ~ expr ~ hws* ~ ")") }
+dot_suffix_bare = { "." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]" }
+call_suffix = { (":" ~ hws* ~ name ~ hws*)? ~ args }
+args = {
+    "(" ~ hws* ~ explist? ~ hws* ~ ")"
+  | table
+  | string
+}
+
+table = { "{" ~ hws* ~ fieldlist? ~ hws* ~ "}" }
+fieldlist = { field ~ (hws* ~ fieldsep ~ hws* ~ field)* ~ (hws* ~ fieldsep)? ~ hws* }
+field = {
+    "[" ~ hws* ~ expr ~ hws* ~ "]" ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr
+  | name ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr
+  | expr
+}
+fieldsep = { "," | ";" }
+
+compound_op = @{
+    "<<>=" | ">><=" | ">>>=" | "^^=" | "..="
+  | "<<=" | ">>="
+  | "+=" | "-=" | "*=" | "/=" | "%=" | "^=" | "|=" | "&=" | "\\="
+}
+
+number = { binary | hex_float | hex | float | int }
+binary = @{
+    "0" ~ ("b" | "B") ~ ("0" | "1")+ ~ ("." ~ ("0" | "1")*)?
+  | "0" ~ ("b" | "B") ~ "." ~ ("0" | "1")+
+}
+hex_float = @{
+    "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ ~ "." ~ ASCII_HEX_DIGIT* ~ hex_exp?
+  | "0" ~ ("x" | "X") ~ "." ~ ASCII_HEX_DIGIT+ ~ hex_exp?
+  | "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ ~ hex_exp
+}
+hex_exp = _{ ("p" | "P") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+hex = @{ "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ }
+float = @{
+    ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ exp_part?
+  | "." ~ ASCII_DIGIT+ ~ exp_part?
+  | ASCII_DIGIT+ ~ exp_part
+}
+exp_part = _{ ("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+int = @{ ASCII_DIGIT+ }
+
+string = @{ short_string | long_brackets }
+short_string = @{
+    "\"" ~ (escape | !"\"" ~ !("\r" | "\n") ~ ANY)* ~ "\""
+  | "'" ~ (escape | !"'" ~ !("\r" | "\n") ~ ANY)* ~ "'"
+}
+escape = @{ "\\" ~ ANY }
+long_brackets = @{
+    "[" ~ PUSH("="*) ~ "[" ~ (!("]" ~ PEEK ~ "]") ~ ANY)* ~ "]" ~ POP ~ "]"
+}
+
+button = @{
+    "⬅" ~ "\u{FE0F}"?
+  | "➡" ~ "\u{FE0F}"?
+  | "⬆" ~ "\u{FE0F}"?
+  | "⬇" ~ "\u{FE0F}"?
+  | "🅾" ~ "\u{FE0F}"?
+  | "❎" ~ "\u{FE0F}"?
+}

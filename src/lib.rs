@@ -1,5 +1,7 @@
 #![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.1.1")]
 #![doc = include_str!("../README.md")]
+use find_matching_bracket::find_matching_paren;
+use lazy_regex::regex;
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
 /// Modified (c) 2019 Ben Wiley <therealbenwiley@gmail.com>
 /// Modified (c) 2025 Shane Celis <shane.celis@gmail.com>
@@ -13,8 +15,8 @@
 /// Licensed under the Zlib license.
 use regex::{Regex, Replacer};
 use std::{borrow::Cow, error::Error};
-use find_matching_bracket::find_matching_paren;
-use lazy_regex::regex;
+
+mod parse;
 
 // https://stackoverflow.com/a/79268946/6454690
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
@@ -70,8 +72,10 @@ pub fn was_patched(patch_output: &Cow<'_, str>) -> bool {
 pub fn patch_includes<'h, 'r>(
     lua: impl Into<Cow<'h, str>>,
     mut resolve: impl FnMut(&str) -> Cow<'r, str>,
-) -> Cow<'h, str> where
-'r: 'h {
+) -> Cow<'h, str>
+where
+    'r: 'h,
+{
     let mut lua = lua.into();
     replace_all_in_place(
         regex!(r"(?m)^\s*#include\s+(\S+)"),
@@ -87,10 +91,9 @@ pub fn patch_includes<'h, 'r>(
 /// synchronously using [patch_includes] or [try_patch_includes]. However, in an
 /// asynchronous IO context, it is often necessary to read in the contents
 /// before patching the includes.
-pub fn find_includes(
-    lua: &str,
-) -> impl Iterator<Item = String> {
-    regex!(r"(?m)^\s*#include\s+(\S+)").captures_iter(lua)
+pub fn find_includes(lua: &str) -> impl Iterator<Item = String> {
+    regex!(r"(?m)^\s*#include\s+(\S+)")
+        .captures_iter(lua)
         .map(|caps: regex::Captures| caps[1].to_string())
 }
 
@@ -101,11 +104,18 @@ pub fn find_includes(
 /// recommended to use [patch_includes] before this function since if those
 /// inclusions may use the Pico-8 dialect.
 ///
-/// NOTE: This is not a full language parser, but a series of regular
-/// expressions, so it is not guaranteed to work with every valid Pico-8
-/// expression. But if it does not work, please file an issue with the failing
-/// expression.
+/// Parses Pico-8 Lua and rewrites the dialect in place. A snippet that does not
+/// parse falls back to regular expressions.
 pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
+    let lua = lua.into();
+    match parse::try_patch(lua.as_ref()) {
+        Ok(Cow::Borrowed(_)) => lua,
+        Ok(Cow::Owned(patched)) => Cow::Owned(patched),
+        Err(()) => patch_lua_regex(lua),
+    }
+}
+
+fn patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     let mut lua = lua.into();
     // Replace != with ~=.
     replace_all_in_place(regex!(r"!="), &mut lua, "~=");
@@ -172,7 +182,11 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     );
 
     // Rewrite assignment operators (+=, -=, etc.).
-    replace_all_in_place(regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\breturn|\bend|\belse|;|--|$))"), &mut lua, "$1 = $1 $2 ($3)$4");
+    replace_all_in_place(
+        regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\breturn|\bend|\belse|;|--|$))"),
+        &mut lua,
+        "$1 = $1 $2 ($3)$4",
+    );
 
     // Replace "?expr" with "print(expr)".
     replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
@@ -445,27 +459,33 @@ if ((abs(x) < (a.w+a2.w)) and
         // );
 
         // It should actually do this, but the corner cases are too many.
-        assert_patch("accum += f.delay or self.delay",
-                     "accum = accum + (f.delay or self.delay)");
+        assert_patch(
+            "accum += f.delay or self.delay",
+            "accum = accum + (f.delay or self.delay)",
+        );
 
-        assert_patch("if true then accum += f.delay or self.delay end",
-                     "if true then accum = accum + (f.delay or self.delay) end");
+        assert_patch(
+            "if true then accum += f.delay or self.delay end",
+            "if true then accum = accum + (f.delay or self.delay) end",
+        );
     }
 
     #[test]
     fn test_celeste0() {
-        assert_patch("if freeze>0 then freeze-=1 return end",
-                     "if freeze>0 then freeze = freeze - (1) return end");
+        assert_patch(
+            "if freeze>0 then freeze-=1 return end",
+            "if freeze>0 then freeze = freeze - (1) return end",
+        );
     }
-
 
     #[test]
     fn test_pooh_big_adventure0() {
-        assert_patch("if btnp(3) then self.choice += 1; result = true end",
-                     "if btnp(3) then self.choice = self.choice + (1); result = true end");
+        assert_patch(
+            "if btnp(3) then self.choice += 1; result = true end",
+            "if btnp(3) then self.choice = self.choice + (1); result = true end",
+        );
 
-        assert_patch("       i += 1",
-                     "       i = i + (1)");
+        assert_patch("       i += 1", "       i = i + (1)");
     }
 
     #[test]
@@ -480,19 +500,72 @@ local key = keys[i]
 
     #[test]
     fn test_find_includes() {
-
         let lua = r#"
 #include a.p8
 #include b.lua
 "#;
-        assert_eq!(find_includes(lua).collect::<Vec<_>>(), vec!["a.p8", "b.lua"]);
+        assert_eq!(
+            find_includes(lua).collect::<Vec<_>>(),
+            vec!["a.p8", "b.lua"]
+        );
     }
 
+    #[test]
+    fn test_not_so_well0() {
+        let src = "pos += (delta - thresh):map(function(v) return mid(0, v, 4) end)";
+        let expected = "pos = pos + ((delta - thresh):map(function(v) return mid(0, v, 4) end))";
+        assert!(parse::try_patch(src).is_ok());
+        assert_eq!(patch_lua(src), expected);
+    }
 
     #[test]
-    #[ignore = "need a real parser to fix this; see 'antlr' branch"]
-    fn test_not_so_well0() {
-        assert_eq!(patch_lua("pos += (delta - thresh):map(function(v) return mid(0, v, 4) end)"),
-                "pos = pos + ((delta - thresh):map(function(v) return mid(0, v, 4) end))");
+    fn test_parser_shorthand_if_with_call() {
+        let src = "if (o:ready()) o:go(1)\n";
+        let expected = "if o:ready() then o:go(1) end\n";
+        assert_eq!(parse::try_patch(src).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_parser_compound_or_and_call() {
+        assert_eq!(
+            parse::try_patch("accum += f.delay or self.delay").unwrap(),
+            "accum = accum + (f.delay or self.delay)"
+        );
+        assert_eq!(
+            parse::try_patch("pos += obj:step()").unwrap(),
+            "pos = pos + (obj:step())"
+        );
+    }
+
+    #[test]
+    fn test_parser_slash_slash_inside_string() {
+        let src = "x = \"http://example.com\" // hi\n";
+        let expected = "x = \"http://example.com\" -- hi\n";
+        assert_eq!(parse::try_patch(src).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_parser_shorthand_while() {
+        assert_eq!(
+            parse::try_patch("while (x > 0) x -= 1\n").unwrap(),
+            "while x > 0 do x = x - (1) end\n"
+        );
+    }
+
+    #[test]
+    fn test_parser_print_explist() {
+        assert_eq!(parse::try_patch("?a, b").unwrap(), "print(a, b)");
+    }
+
+    #[test]
+    fn test_parser_binary_fraction_longer_than_a_nibble() {
+        assert_eq!(parse::try_patch("a = 0b0.00001").unwrap(), "a = 0x0.08");
+    }
+
+    #[test]
+    fn test_parse_failure_uses_regex() {
+        let src = "@@";
+        assert!(parse::try_patch(src).is_err());
+        assert_eq!(patch_lua(src), patch_lua_regex(src));
     }
 }
