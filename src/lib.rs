@@ -221,6 +221,19 @@ fn patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     lua
 }
 
+/// Regex rewriter, exported so the benchmark can time it against [`patch_lua`].
+#[doc(hidden)]
+pub fn bench_patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
+    patch_lua_regex(lua)
+}
+
+/// Whether the pest grammar accepts `src`. The benchmark uses this so a parse
+/// failure does not silently time the regex fallback.
+#[doc(hidden)]
+pub fn bench_parsed(src: &str) -> bool {
+    parse::try_patch(src).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

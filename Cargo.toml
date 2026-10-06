@@ -23,4 +23,9 @@ pest_derive = "2.8"
 regex-lite = "0.1.6"
 
 [dev-dependencies]
+criterion = "0.8.2"
 version-sync = "0.9.5"
+
+[[bench]]
+name = "patch_lua"
+harness = false
