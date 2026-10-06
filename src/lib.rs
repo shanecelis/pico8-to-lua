@@ -67,10 +67,11 @@ pub fn was_patched(patch_output: &Cow<'_, str>) -> bool {
 }
 
 /// Resolve the Pico-8 "#include path.p8" statements without possible error.
-pub fn patch_includes<'h>(
+pub fn patch_includes<'h, 'r>(
     lua: impl Into<Cow<'h, str>>,
-    mut resolve: impl FnMut(&str) -> String,
-) -> Cow<'h, str> {
+    mut resolve: impl FnMut(&str) -> Cow<'r, str>,
+) -> Cow<'h, str> where
+'r: 'h {
     let mut lua = lua.into();
     replace_all_in_place(
         regex!(r"(?m)^\s*#include\s+(\S+)"),
@@ -113,12 +114,14 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     replace_all_in_place(regex!(r"//"), &mut lua, "--");
 
     // Replace unicode symbols for buttons.
+    // Stop at the call's own ')'. `\S+` would swallow it when the call is
+    // wrapped, as in `if (btn(❎))`, and the glyph would be written back.
     replace_all_in_place(
-        regex!(r"(btnp?)\(\s*(\S+)\s*\)"),
+        regex!(r"(btnp?)\(\s*([^)]+?)\s*\)"),
         &mut lua,
         |caps: &regex::Captures| {
             let func = &caps[1];
-            let symbol = caps[2].trim_end_matches("\u{fe0f}");
+            let symbol = caps[2].trim().trim_end_matches('\u{fe0f}');
             let sub = match symbol {
                 "⬅" => "0",
                 "➡" => "1",
@@ -325,7 +328,7 @@ mod tests {
         let lua = r#"
         #include blah.p8
         "#;
-        let patched = patch_includes(lua, |path| format!("-- INCLUDE {}", path));
+        let patched = patch_includes(lua, |path| format!("-- INCLUDE {}", path).into());
         assert!(patched.contains("-- INCLUDE blah.p8"), "{}", &patched);
     }
 
@@ -376,6 +379,16 @@ mod tests {
         let lua = "if btnp(🅾) then";
         let patched = patch_lua(lua);
         assert_eq!(patched.trim(), "if btnp(4) then");
+    }
+
+    #[test]
+    fn test_button_inside_if() {
+        let lua = "if (btn(❎)) then\nend\nif (l%16==0 or btnp(❎)) then\nend";
+        let patched = patch_lua(lua);
+        assert_eq!(
+            patched.trim(),
+            "if (btn(5)) then\nend\nif (l%16==0 or btnp(5)) then\nend"
+        );
     }
 
     fn assert_patch(unpatched: &str, expected_patched: &str) {
