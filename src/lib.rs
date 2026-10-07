@@ -18,6 +18,8 @@ use std::{borrow::Cow, error::Error};
 
 mod parse;
 
+pub use parse::ParseError;
+
 // https://stackoverflow.com/a/79268946/6454690
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
     let new = regex.replace_all(s, replacer);
@@ -105,13 +107,12 @@ pub fn find_includes(lua: &str) -> impl Iterator<Item = String> {
 /// inclusions may use the Pico-8 dialect.
 ///
 /// Parses Pico-8 Lua and rewrites the dialect in place. A snippet that does not
-/// parse falls back to regular expressions.
-pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
+/// parse returns [`ParseError`].
+pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, ParseError> {
     let lua = lua.into();
-    match parse::try_patch(lua.as_ref()) {
-        Ok(Cow::Borrowed(_)) => lua,
-        Ok(Cow::Owned(patched)) => Cow::Owned(patched),
-        Err(()) => patch_lua_regex(lua),
+    match parse::try_patch(lua.as_ref())? {
+        Cow::Borrowed(_) => Ok(lua),
+        Cow::Owned(patched) => Ok(Cow::Owned(patched)),
     }
 }
 
@@ -228,7 +229,7 @@ pub fn bench_patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
 }
 
 /// Whether the pest grammar accepts `src`. The benchmark uses this so a parse
-/// failure does not silently time the regex fallback.
+/// failure is not timed as a successful rewrite.
 #[doc(hidden)]
 pub fn bench_parsed(src: &str) -> bool {
     parse::try_patch(src).is_ok()
@@ -238,17 +239,21 @@ pub fn bench_parsed(src: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn ok(lua: &str) -> Cow<'_, str> {
+        patch_lua(lua).unwrap_or_else(|err| panic!("{err}"))
+    }
+
     #[test]
     fn test_not_equal_replacement() {
         let lua = "if a != b then print(a) end";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert!(patched.contains("a ~= b"));
     }
 
     #[test]
     fn test_comment_replacement() {
         let lua = "// this is a comment\nprint('hello')";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert!(patched.contains("-- this is a comment"));
     }
 
@@ -256,7 +261,7 @@ mod tests {
     fn test_shorthand_if_rewrite() {
         let lua = "if (not b) i = 1\n";
         let expected = "if not b then i = 1 end\n";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched, expected);
     }
 
@@ -264,7 +269,7 @@ mod tests {
     fn test_shorthand_if_rewrite_comment() {
         let lua = "if (not b) i = 1 // hi\n";
         let expected = "if not b then i = 1 end -- hi\n";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched, expected);
     }
 
@@ -272,42 +277,42 @@ mod tests {
     fn test_shorthand_if_rewrite_and() {
         let lua = "if (not b and not c) i = 1\n";
         let expected = "if not b and not c then i = 1 end\n";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched, expected);
     }
 
     #[test]
     fn test_assignment_operator_rewrite() {
         let lua = "x += 1";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "x = x + (1)");
     }
 
     #[test]
     fn test_question_print_conversion0() {
         let lua = "?x";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "print(x)");
     }
 
     #[test]
     fn test_question_print_conversion() {
         let lua = "?x + y";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "print(x + y)");
     }
 
     #[test]
     fn test_binary_literal_conversion_integer() {
         let lua = "a = 0b1010";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "a = 0xa");
     }
 
     #[test]
     fn test_binary_literal_conversion_fractional() {
         let lua = "a = 0b1010.1";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "a = 0xa.8");
     }
 
@@ -318,7 +323,7 @@ mod tests {
         if (a != b) x += 1
         ?x
         "#;
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert!(patched.contains("-- comment"), "{}", patched);
         assert!(
             patched.contains("if a ~= b then x = x + (1) end"),
@@ -331,7 +336,7 @@ mod tests {
     #[test]
     fn test_no_change_no_allocation() {
         let lua = "x = 1";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         // assert!(patched.is_borrowed());
         assert!(match patched {
             Cow::Owned(_) => false,
@@ -342,7 +347,7 @@ mod tests {
     #[test]
     fn test_change_requires_allocation() {
         let lua = "x += 1";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         // assert!(patched.is_owned());
         assert!(match patched {
             Cow::Owned(_) => true,
@@ -362,7 +367,7 @@ mod tests {
     #[test]
     fn test_bad_comment() {
         let lua = "--==configurations==--";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(patched.trim(), "--==configurations==--");
     }
 
@@ -370,7 +375,7 @@ mod tests {
     fn test_bad_if() {
         let lua =
             "if (ord(tb.str[tb.i],tb.char)!=32) sfx(tb.voice) -- play the voice sound effect.";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(
             patched.trim(),
             "if ord(tb.str[tb.i],tb.char)~=32 then sfx(tb.voice) end -- play the voice sound effect."
@@ -380,7 +385,7 @@ mod tests {
     #[test]
     fn test_bad_incr() {
         let lua = "tb.i+=1 -- increase the index, to display the next message on tb.str";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(
             patched.trim(),
             "tb.i = tb.i + (1) -- increase the index, to display the next message on tb.str"
@@ -389,29 +394,29 @@ mod tests {
 
     #[test]
     fn test_button() {
-        let lua = "if btnp(➡️) or btn(❎) then";
-        let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "if btnp(1) or btn(5) then");
+        let lua = "if btnp(➡️) or btn(❎) then end";
+        let patched = ok(lua);
+        assert_eq!(patched.trim(), "if btnp(1) or btn(5) then end");
     }
 
     #[test]
     fn test_button2() {
-        let lua = "if btnp(❎) then";
-        let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "if btnp(5) then");
+        let lua = "if btnp(❎) then end";
+        let patched = ok(lua);
+        assert_eq!(patched.trim(), "if btnp(5) then end");
     }
 
     #[test]
     fn test_button3() {
-        let lua = "if btnp(🅾) then";
-        let patched = patch_lua(lua);
-        assert_eq!(patched.trim(), "if btnp(4) then");
+        let lua = "if btnp(🅾) then end";
+        let patched = ok(lua);
+        assert_eq!(patched.trim(), "if btnp(4) then end");
     }
 
     #[test]
     fn test_button_inside_if() {
         let lua = "if (btn(❎)) then\nend\nif (l%16==0 or btnp(❎)) then\nend";
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert_eq!(
             patched.trim(),
             "if (btn(5)) then\nend\nif (l%16==0 or btnp(5)) then\nend"
@@ -419,7 +424,7 @@ mod tests {
     }
 
     fn assert_patch(unpatched: &str, expected_patched: &str) {
-        let patched = patch_lua(unpatched);
+        let patched = ok(unpatched);
         assert_eq!(patched, expected_patched);
     }
 
@@ -433,18 +438,16 @@ mod tests {
 
     #[test]
     fn test_cardboard_toad1() {
-        assert_patch(
-            r#"
+        // `"hi"` is an expression, not a statement, so the grammar rejects it.
+        let src = r#"
 if ((abs(x) < (a.w+a2.w)) and
     (abs(y) < (a.h+a2.h)))
     then "hi" end
-"#,
-            r#"
-if ((abs(x) < (a.w+a2.w)) and
-    (abs(y) < (a.h+a2.h)))
-    then "hi" end
-"#,
-        );
+"#;
+        let err = patch_lua(src).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("hi"), "{message}");
+        assert!(message.contains("expected"), "{message}");
     }
 
     #[test]
@@ -507,7 +510,7 @@ if ((abs(x) < (a.w+a2.w)) and
 i += 1
 local key = keys[i]
 "#;
-        let patched = patch_lua(lua);
+        let patched = ok(lua);
         assert!(patched.contains("i = i + (1)"));
     }
 
@@ -528,7 +531,7 @@ local key = keys[i]
         let src = "pos += (delta - thresh):map(function(v) return mid(0, v, 4) end)";
         let expected = "pos = pos + ((delta - thresh):map(function(v) return mid(0, v, 4) end))";
         assert!(parse::try_patch(src).is_ok());
-        assert_eq!(patch_lua(src), expected);
+        assert_eq!(ok(src), expected);
     }
 
     #[test]
@@ -576,9 +579,12 @@ local key = keys[i]
     }
 
     #[test]
-    fn test_parse_failure_uses_regex() {
+    fn test_parse_failure_is_an_error() {
         let src = "@@";
-        assert!(parse::try_patch(src).is_err());
-        assert_eq!(patch_lua(src), patch_lua_regex(src));
+        let err = patch_lua(src).unwrap_err();
+        assert_eq!((err.line, err.column), (1, 1));
+        let message = err.to_string();
+        assert!(message.contains("@@"), "{message}");
+        assert!(message.contains("expected"), "{message}");
     }
 }

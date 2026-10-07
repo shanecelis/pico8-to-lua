@@ -92,7 +92,7 @@ fn bench_patch(c: &mut Criterion) {
             b.iter(|| black_box(bench_patch_lua_regex(black_box(src.as_str()))))
         });
         group.bench_with_input(BenchmarkId::new("parser", name), src, |b, src| {
-            b.iter(|| black_box(patch_lua(black_box(src.as_str()))))
+            b.iter(|| black_box(patch_lua(black_box(src.as_str())).unwrap()))
         });
     }
     group.finish();

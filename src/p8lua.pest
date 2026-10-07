@@ -35,18 +35,19 @@ k_true = @{ "true" ~ !ident_cont }
 k_until = @{ "until" ~ !ident_cont }
 k_while = @{ "while" ~ !ident_cont }
 
-keyword = _{
-    k_and | k_break | k_do | k_else | k_elseif | k_end | k_false | k_for
-  | k_function | k_goto | k_if | k_in | k_local | k_nil | k_not | k_or
-  | k_repeat | k_return | k_then | k_true | k_until | k_while
+// One atomic rule, not a call per keyword. `!keyword` runs on every name.
+keyword = @{
+    ("elseif" | "function" | "repeat" | "return" | "until" | "while" | "break"
+    | "false" | "local" | "then" | "true" | "and" | "end" | "for" | "goto"
+    | "nil" | "not" | "else" | "do" | "if" | "in" | "or") ~ !ident_cont
 }
 
 name = @{ !keyword ~ (ASCII_ALPHA | "_") ~ ident_cont* }
 
 chunk = { SOI ~ block ~ EOI }
-block = { stmt* }
+block = _{ stmt* }
 
-stmt = {
+stmt = _{
     ";"
   | include
   | if_stmt
@@ -64,15 +65,15 @@ stmt = {
   | k_break
   | label
   | return_stmt
-  | compound_assign
   | assign
+  | compound_assign
   | functioncall
   | print_stmt
 }
 
 include = @{ "#" ~ hws* ~ "include" ~ (!("\r" | "\n") ~ ANY)* }
 
-if_stmt = {
+if_stmt = _{
     k_if ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block
     ~ (hws* ~ k_elseif ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block)*
     ~ (hws* ~ k_else ~ hws* ~ block)?
@@ -89,97 +90,103 @@ shorthand_while = ${
 }
 shorthand_body = { stmt ~ (hws* ~ stmt)* }
 
-while_stmt = { k_while ~ hws* ~ expr ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end }
-repeat_stmt = { k_repeat ~ hws* ~ block ~ hws* ~ k_until ~ hws* ~ expr }
-for_num = {
+while_stmt = _{ k_while ~ hws* ~ expr ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end }
+repeat_stmt = _{ k_repeat ~ hws* ~ block ~ hws* ~ k_until ~ hws* ~ expr }
+for_num = _{
     k_for ~ hws* ~ name ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr ~ hws* ~ "," ~ hws* ~ expr
     ~ (hws* ~ "," ~ hws* ~ expr)? ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end
 }
-for_in = {
+for_in = _{
     k_for ~ hws* ~ namelist ~ hws* ~ k_in ~ hws* ~ explist ~ hws* ~ k_do ~ hws* ~ block ~ hws* ~ k_end
 }
-function_stmt = { k_function ~ hws* ~ funcname ~ hws* ~ funcbody }
-local_function = { k_local ~ hws* ~ k_function ~ hws* ~ name ~ hws* ~ funcbody }
-local_stmt = { k_local ~ hws* ~ namelist ~ (hws* ~ "=" ~ !"=" ~ hws* ~ explist)? }
-do_stmt = { k_do ~ hws* ~ block ~ hws* ~ k_end }
-goto_stmt = { k_goto ~ hws* ~ name }
-label = { "::" ~ hws* ~ name ~ hws* ~ "::" }
-return_stmt = { k_return ~ (hws* ~ explist)? ~ (hws* ~ ";")? }
+function_stmt = _{ k_function ~ hws* ~ funcname ~ hws* ~ funcbody }
+local_function = _{ k_local ~ hws* ~ k_function ~ hws* ~ name ~ hws* ~ funcbody }
+local_stmt = _{ k_local ~ hws* ~ namelist ~ (hws* ~ "=" ~ !"=" ~ hws* ~ explist)? }
+do_stmt = _{ k_do ~ hws* ~ block ~ hws* ~ k_end }
+goto_stmt = _{ k_goto ~ hws* ~ name }
+label = _{ "::" ~ hws* ~ name ~ hws* ~ "::" }
+return_stmt = _{ k_return ~ (hws* ~ explist)? ~ (hws* ~ ";")? }
 
 compound_assign = { var ~ hws* ~ compound_op ~ hws* ~ expr }
-assign = { varlist ~ hws* ~ "=" ~ !"=" ~ hws* ~ explist }
+assign = _{ varlist ~ hws* ~ "=" ~ !"=" ~ hws* ~ explist }
 print_stmt = { "?" ~ hws* ~ explist }
 
-varlist = { var ~ (hws* ~ "," ~ hws* ~ var)* }
-namelist = { name ~ (hws* ~ "," ~ hws* ~ name)* }
-explist = { expr ~ (hws* ~ "," ~ hws* ~ expr)* }
+varlist = _{ var ~ (hws* ~ "," ~ hws* ~ var)* }
+namelist = _{ name ~ (hws* ~ "," ~ hws* ~ name)* }
+explist = _{ expr ~ (hws* ~ "," ~ hws* ~ expr)* }
 
-funcname = { name ~ (hws* ~ "." ~ hws* ~ name)* ~ (hws* ~ ":" ~ hws* ~ name)? }
-funcbody = { "(" ~ hws* ~ parlist? ~ hws* ~ ")" ~ hws* ~ block ~ hws* ~ k_end }
-parlist = { namelist ~ (hws* ~ "," ~ hws* ~ "...")? | "..." }
-function_expr = { k_function ~ hws* ~ funcbody }
+funcname = _{ name ~ (hws* ~ "." ~ hws* ~ name)* ~ (hws* ~ ":" ~ hws* ~ name)? }
+funcbody = _{ "(" ~ hws* ~ parlist? ~ hws* ~ ")" ~ hws* ~ block ~ hws* ~ k_end }
+parlist = _{ namelist ~ (hws* ~ "," ~ hws* ~ "...")? | "..." }
+function_expr = _{ k_function ~ hws* ~ funcbody }
 
 // Lowest precedence first. `..` and `^` are right-associative.
 expr = { or_expr }
-or_expr = { and_expr ~ (hws* ~ k_or ~ hws* ~ and_expr)* }
-and_expr = { cmp_expr ~ (hws* ~ k_and ~ hws* ~ cmp_expr)* }
-cmp_expr = { bitor_expr ~ (hws* ~ cmp_op ~ hws* ~ bitor_expr)* }
+or_expr = _{ and_expr ~ (hws* ~ k_or ~ hws* ~ and_expr)* }
+and_expr = _{ cmp_expr ~ (hws* ~ k_and ~ hws* ~ cmp_expr)* }
+cmp_expr = _{ bitor_expr ~ (hws* ~ cmp_op ~ hws* ~ bitor_expr)* }
 cmp_op = @{ "==" | "~=" | "!=" | "<=" | ">=" | "<" | ">" }
-bitor_expr = { bitxor_expr ~ (hws* ~ "|" ~ hws* ~ bitxor_expr)* }
-bitxor_expr = { bitand_expr ~ (hws* ~ "^^" ~ hws* ~ bitand_expr)* }
-bitand_expr = { shift_expr ~ (hws* ~ "&" ~ hws* ~ shift_expr)* }
-shift_expr = { concat_expr ~ (hws* ~ shift_op ~ hws* ~ concat_expr)* }
+bitor_expr = _{ bitxor_expr ~ (hws* ~ "|" ~ hws* ~ bitxor_expr)* }
+bitxor_expr = _{ bitand_expr ~ (hws* ~ "^^" ~ hws* ~ bitand_expr)* }
+bitand_expr = _{ shift_expr ~ (hws* ~ "&" ~ hws* ~ shift_expr)* }
+shift_expr = _{ concat_expr ~ (hws* ~ shift_op ~ hws* ~ concat_expr)* }
 shift_op = @{ "<<>" | ">><" | ">>>" | "<<" | ">>" }
-concat_expr = { add_expr ~ (hws* ~ ".." ~ !"." ~ hws* ~ concat_expr)? }
-add_expr = { mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
+concat_expr = _{ add_expr ~ (hws* ~ ".." ~ !"." ~ hws* ~ concat_expr)? }
+add_expr = _{ mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
 add_op = @{ "+" ~ !"=" | "-" ~ !"=" }
-mul_expr = { unary ~ (hws* ~ mul_op ~ hws* ~ unary)* }
+mul_expr = _{ unary ~ (hws* ~ mul_op ~ hws* ~ unary)* }
 mul_op = @{ "*" ~ !"=" | "/" ~ !"/" ~ !"=" | "%" ~ !"=" | "\\" ~ !"=" }
-unary = { (unary_op ~ hws* ~ unary) | pow_expr }
+unary = _{ (unary_op ~ hws* ~ unary) | pow_expr }
 unary_op = @{ k_not | "#" | "-" ~ !"=" | "~" ~ !"=" }
-pow_expr = { primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
+pow_expr = _{ primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
 
-primary = {
-    k_nil | k_false | k_true
+// Names and calls are the common case, so they are tried before literals.
+primary = _{
+    prefix_exp
   | number
   | string
+  | k_nil | k_false | k_true
   | "..."
   | function_expr
   | table
-  | prefix_exp
   | button
 }
 
-prefix_exp = { functioncall | var | ("(" ~ hws* ~ expr ~ hws* ~ ")") }
+// One pass over a name or `(expr)`, then any `.` / `[]` / call suffixes.
+// Trying `functioncall | var` reparsed every field (`self.x`) and every `(expr)`.
+prefix_exp = _{
+    simple_prefix
+    ~ (hws* ~ (dot_suffix_bare | call_suffix))*
+}
 
 var = { name ~ dot_suffix* | ("(" ~ hws* ~ expr ~ hws* ~ ")") ~ dot_suffix+ }
-dot_suffix = { hws* ~ ("." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]") }
+dot_suffix = _{ hws* ~ ("." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]") }
 
 // A repeat does not backtrack, so dots are consumed first and the required
 // call stays put. Otherwise `obj:step()` and `(e):map()` lose their call.
-functioncall = {
+functioncall = _{
     simple_prefix
     ~ (hws* ~ dot_suffix_bare)*
     ~ hws* ~ call_suffix
     ~ (hws* ~ (dot_suffix_bare | call_suffix))*
 }
-simple_prefix = { name | ("(" ~ hws* ~ expr ~ hws* ~ ")") }
-dot_suffix_bare = { "." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]" }
-call_suffix = { (":" ~ hws* ~ name ~ hws*)? ~ args }
-args = {
+simple_prefix = _{ name | ("(" ~ hws* ~ expr ~ hws* ~ ")") }
+dot_suffix_bare = _{ "." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]" }
+call_suffix = _{ (":" ~ hws* ~ name ~ hws*)? ~ args }
+args = _{
     "(" ~ hws* ~ explist? ~ hws* ~ ")"
   | table
   | string
 }
 
-table = { "{" ~ hws* ~ fieldlist? ~ hws* ~ "}" }
-fieldlist = { field ~ (hws* ~ fieldsep ~ hws* ~ field)* ~ (hws* ~ fieldsep)? ~ hws* }
-field = {
+table = _{ "{" ~ hws* ~ fieldlist? ~ hws* ~ "}" }
+fieldlist = _{ field ~ (hws* ~ fieldsep ~ hws* ~ field)* ~ (hws* ~ fieldsep)? ~ hws* }
+field = _{
     "[" ~ hws* ~ expr ~ hws* ~ "]" ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr
   | name ~ hws* ~ "=" ~ !"=" ~ hws* ~ expr
   | expr
 }
-fieldsep = { "," | ";" }
+fieldsep = _{ "," | ";" }
 
 compound_op = @{
     "<<>=" | ">><=" | ">>>=" | "^^=" | "..="

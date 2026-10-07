@@ -4,8 +4,43 @@
 //! `if` that contains `+=`) is built from the inner edits, then the inner ranges
 //! are skipped when the edits are applied.
 use pest::Parser;
+use pest::error::LineColLocation;
 use pest_derive::Parser;
 use std::borrow::Cow;
+use std::fmt;
+
+/// A Pico-8 snippet the grammar rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseError {
+    /// 1-based line of the failure.
+    pub line: usize,
+    /// 1-based column of the failure.
+    pub column: usize,
+    message: String,
+}
+
+impl ParseError {
+    fn from_pest(err: pest::error::Error<Rule>) -> Self {
+        let (line, column) = match err.line_col {
+            LineColLocation::Pos((line, column)) | LineColLocation::Span((line, column), _) => {
+                (line, column)
+            }
+        };
+        Self {
+            line,
+            column,
+            message: err.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 #[derive(Parser)]
 #[grammar = "src/p8lua.pest"]
@@ -19,11 +54,15 @@ struct Edit {
 
 /// Parse `src` and rewrite Pico-8 dialect, preserving everything else.
 ///
-/// `Err` means the grammar rejected the input. `Ok` is the rewritten source,
-/// borrowed when nothing changed.
-pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ()> {
-    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(|_| ())?;
-    let chunk = pairs.next().ok_or(())?;
+/// `Err` is the parse failure. `Ok` is the rewritten source, borrowed when
+/// nothing changed.
+pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ParseError> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from_pest)?;
+    let chunk = pairs.next().ok_or_else(|| ParseError {
+        line: 1,
+        column: 1,
+        message: "empty parse".to_string(),
+    })?;
     let mut edits = gap_comment_edits(src, &chunk);
     collect(chunk, src, &mut edits);
     if edits.is_empty() {

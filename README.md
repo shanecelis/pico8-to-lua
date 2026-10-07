@@ -34,7 +34,7 @@ if true then x = x + (1) end
 ### Patch the Code
 ``` rust
 use pico8_to_lua::patch_lua;
-assert_eq!(patch_lua("x += 1"), "x = x + (1)");
+assert_eq!(patch_lua("x += 1").unwrap(), "x = x + (1)");
 ```
 
 ### Patch the Includes
@@ -57,7 +57,7 @@ rotation operators: '>><' and '<<>'.
 
 ## Word of Caution
 
-`patch_lua` parses Pico-8 Lua and rewrites the dialect in place. A file that does not parse falls back to regular expressions.
+`patch_lua` parses Pico-8 Lua and rewrites the dialect in place. A file that does not parse returns an error.
 
 ## Origin
 
