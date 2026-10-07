@@ -83,8 +83,8 @@ block = _{ stmt* }
 stmt = _{
     ";"
   | include
-  | if_stmt
   | shorthand_if
+  | if_stmt
   | while_stmt
   | shorthand_while
   | repeat_stmt
@@ -106,12 +106,15 @@ stmt = _{
 
 include = @{ "#" ~ hws* ~ "include" ~ (!("\r" | "\n") ~ ANY)* }
 
+// Pico-8 accepts `do` in place of `then`. Shorthand `if (cond)` is tried
+// first, so `if (c) do ... end` stays a do-block body on that one line.
 if_stmt = _{
-    k_if ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block
-    ~ (hws* ~ k_elseif ~ hws* ~ expr ~ hws* ~ k_then ~ hws* ~ block)*
+    k_if ~ hws* ~ expr ~ hws* ~ if_then ~ hws* ~ block
+    ~ (hws* ~ k_elseif ~ hws* ~ expr ~ hws* ~ if_then ~ hws* ~ block)*
     ~ (hws* ~ k_else ~ hws* ~ block)?
     ~ hws* ~ k_end
 }
+if_then = { k_then | k_do }
 
 // `$` keeps child pairs and suppresses implicit whitespace, including newlines.
 shorthand_if = ${

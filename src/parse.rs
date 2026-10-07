@@ -129,6 +129,13 @@ fn collect(pair: pest::iterators::Pair<'_, Rule>, src: &str, edits: &mut Vec<Edi
                 replacement: format!("print({args})"),
             });
         }
+        Rule::if_then if span.as_str() == "do" => {
+            edits.push(Edit {
+                start,
+                end,
+                replacement: "then".to_string(),
+            });
+        }
         Rule::cmp_op if span.as_str() == "!=" => {
             edits.push(Edit {
                 start,

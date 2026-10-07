@@ -332,6 +332,15 @@ mod tests {
     }
 
     #[test]
+    fn test_if_do_is_then() {
+        // caveofcards.p8: `do` closes the condition where Lua wants `then`.
+        let lua = "if rt == hp1blocks[1] or rt == hp1blocks[2] do\nend\n";
+        let expected = "if rt == hp1blocks[1] or rt == hp1blocks[2] then\nend\n";
+        assert_eq!(ok(lua), expected);
+        assert_eq!(ok("if (c) do x() end\n"), "if c then do x() end end\n");
+    }
+
+    #[test]
     fn test_shorthand_if_rewrite_and() {
         let lua = "if (not b and not c) i = 1\n";
         let expected = "if not b and not c then i = 1 end\n";
