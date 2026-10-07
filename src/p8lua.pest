@@ -104,7 +104,11 @@ stmt = _{
   | print_stmt
 }
 
-include = @{ "#" ~ hws* ~ "include" ~ (!("\r" | "\n") ~ ANY)* }
+// `#include path` as a statement. The path is the first token; a trailing
+// comment on the line stays outside the path.
+include = ${ "#" ~ "include" ~ hws+ ~ include_path ~ include_tail }
+include_path = @{ (!(" " | "\t" | "\r" | "\n") ~ ANY)+ }
+include_tail = _{ (!("\r" | "\n") ~ ANY)* }
 
 // Pico-8 accepts `do` in place of `then`. Shorthand `if (cond)` is tried
 // first, so `if (c) do ... end` stays a do-block body on that one line.

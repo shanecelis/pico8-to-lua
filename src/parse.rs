@@ -71,6 +71,61 @@ pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ParseError> {
     Ok(Cow::Owned(materialize(src, 0, src.len(), &edits)))
 }
 
+pub(crate) struct Include<'a> {
+    pub start: usize,
+    pub end: usize,
+    pub path: &'a str,
+}
+
+/// `#include` directives whose `#` is the first non-space character on the line.
+///
+/// A source that does not parse has no directives.
+pub(crate) fn includes(src: &str) -> Result<Vec<Include<'_>>, ParseError> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from_pest)?;
+    let Some(chunk) = pairs.next() else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    walk_includes(chunk, src, &mut found);
+    Ok(found)
+}
+
+fn walk_includes<'a>(
+    pair: pest::iterators::Pair<'a, Rule>,
+    src: &'a str,
+    out: &mut Vec<Include<'a>>,
+) {
+    if pair.as_rule() == Rule::include {
+        let span = pair.as_span();
+        if let Some(path) = pair
+            .into_inner()
+            .find(|child| child.as_rule() == Rule::include_path)
+        {
+            let path = path.as_span();
+            if directive_at_line_start(src, span.start()) {
+                out.push(Include {
+                    start: span.start(),
+                    end: path.end(),
+                    path: path.as_str(),
+                });
+            }
+        }
+        return;
+    }
+    for child in pair.into_inner() {
+        walk_includes(child, src, out);
+    }
+}
+
+fn directive_at_line_start(src: &str, hash: usize) -> bool {
+    let bytes = src.as_bytes();
+    let mut i = hash;
+    while i > 0 && matches!(bytes[i - 1], b' ' | b'\t') {
+        i -= 1;
+    }
+    i == 0 || matches!(bytes[i - 1], b'\n' | b'\r')
+}
+
 fn collect(pair: pest::iterators::Pair<'_, Rule>, src: &str, edits: &mut Vec<Edit>) {
     let rule = pair.as_rule();
     let span = pair.as_span();

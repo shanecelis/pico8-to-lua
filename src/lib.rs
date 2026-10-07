@@ -1,8 +1,5 @@
 #![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.1.1")]
 #![doc = include_str!("../README.md")]
-#[cfg(feature = "regex")]
-use find_matching_bracket::find_matching_paren;
-use lazy_regex::regex;
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
 /// Modified (c) 2019 Ben Wiley <therealbenwiley@gmail.com>
 /// Modified (c) 2025 Shane Celis <shane.celis@gmail.com>
@@ -14,6 +11,11 @@ use lazy_regex::regex;
 /// [here](https://github.com/benwiley4000/pico8-to-lua/blob/master/pico8-to-lua.lua).
 ///
 /// Licensed under the Zlib license.
+#[cfg(feature = "regex")]
+use find_matching_bracket::find_matching_paren;
+#[cfg(feature = "regex")]
+use lazy_regex::regex;
+#[cfg(feature = "regex")]
 use regex::{Regex, Replacer};
 use std::{borrow::Cow, error::Error};
 
@@ -22,6 +24,7 @@ mod parse;
 pub use parse::ParseError;
 
 // https://stackoverflow.com/a/79268946/6454690
+#[cfg(feature = "regex")]
 fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
     let new = regex.replace_all(s, replacer);
     if let Cow::Owned(o) = new {
@@ -31,34 +34,39 @@ fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replac
 
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
 ///
-/// If there are substitution errors, the first error will be returned.
+/// If there are substitution errors, the first error will be returned. A source
+/// that does not parse is returned unchanged.
 pub fn try_patch_includes<'h, E: Error>(
     lua: impl Into<Cow<'h, str>>,
     mut resolve: impl FnMut(&str) -> Result<String, E>,
 ) -> Result<Cow<'h, str>, E> {
-    let mut lua = lua.into();
+    let lua = lua.into();
+    let includes = parse::includes(lua.as_ref()).unwrap_or_default();
+    if includes.is_empty() {
+        return Ok(lua);
+    }
     let mut error = None;
-
-    replace_all_in_place(
-        regex!(r"(?m)^\s*#include\s+(\S+)"),
-        &mut lua,
-        |caps: &regex::Captures| {
-            match resolve(&caps[1]) {
-                Ok(s) => s,
-                Err(e) => {
-                    // This is kind of pointless since the user will never get
-                    // access to the string. I'm leaving here incase the results
-                    // change to make it relevant later.
-                    let result = format!("error(\"failed to include {:?}: {}\")", &caps[1], &e);
-                    if error.is_none() {
-                        error = Some(Err(e))
-                    }
-                    result
+    let mut edits = Vec::with_capacity(includes.len());
+    for include in includes {
+        match resolve(include.path) {
+            Ok(s) => edits.push((include.start, include.end, s)),
+            Err(e) => {
+                // This is kind of pointless since the user will never get
+                // access to the string. I'm leaving here incase the results
+                // change to make it relevant later.
+                let result = format!("error(\"failed to include {:?}: {}\")", include.path, e);
+                if error.is_none() {
+                    error = Some(e);
                 }
+                edits.push((include.start, include.end, result));
             }
-        },
-    );
-    error.unwrap_or(Ok(lua))
+        }
+    }
+    let patched = Cow::Owned(splice(lua.as_ref(), &edits));
+    match error {
+        Some(err) => Err(err),
+        None => Ok(patched),
+    }
 }
 
 /// Returns true if the patch_output was patched by testing whether it is
@@ -72,6 +80,8 @@ pub fn was_patched(patch_output: &Cow<'_, str>) -> bool {
 }
 
 /// Resolve the Pico-8 "#include path.p8" statements without possible error.
+///
+/// A source that does not parse is returned unchanged.
 pub fn patch_includes<'h, 'r>(
     lua: impl Into<Cow<'h, str>>,
     mut resolve: impl FnMut(&str) -> Cow<'r, str>,
@@ -79,25 +89,50 @@ pub fn patch_includes<'h, 'r>(
 where
     'r: 'h,
 {
-    let mut lua = lua.into();
-    replace_all_in_place(
-        regex!(r"(?m)^\s*#include\s+(\S+)"),
-        &mut lua,
-        |caps: &regex::Captures| resolve(&caps[1]),
-    );
-    lua
+    let lua = lua.into();
+    let includes = parse::includes(lua.as_ref()).unwrap_or_default();
+    if includes.is_empty() {
+        return lua;
+    }
+    let edits = includes
+        .iter()
+        .map(|include| {
+            (
+                include.start,
+                include.end,
+                resolve(include.path).into_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    Cow::Owned(splice(lua.as_ref(), &edits))
 }
 
-/// Return each path from the the Pico-8 "#include path.p8" statements.
+fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut last = 0;
+    for (start, end, replacement) in edits {
+        out.push_str(&src[last..*start]);
+        out.push_str(replacement);
+        last = *end;
+    }
+    out.push_str(&src[last..]);
+    out
+}
+
+/// Return each path from the Pico-8 "#include path.p8" statements.
 ///
 /// This function is not strictly necessary if one can read the includes
 /// synchronously using [patch_includes] or [try_patch_includes]. However, in an
 /// asynchronous IO context, it is often necessary to read in the contents
 /// before patching the includes.
+///
+/// A source that does not parse yields no paths. An include written inside a
+/// string or a comment is not a directive.
 pub fn find_includes(lua: &str) -> impl Iterator<Item = String> {
-    regex!(r"(?m)^\s*#include\s+(\S+)")
-        .captures_iter(lua)
-        .map(|caps: regex::Captures| caps[1].to_string())
+    parse::includes(lua)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|include| include.path.to_string())
 }
 
 /// Given a string with the Pico-8 dialect of Lua, it will convert that code to
@@ -687,6 +722,35 @@ local key = keys[i]
             find_includes(lua).collect::<Vec<_>>(),
             vec!["a.p8", "b.lua"]
         );
+    }
+
+    #[test]
+    fn include_directive_skips_strings_and_comments() {
+        let lua = "x += 1\nx = \"#include no.p8\"\n-- #include no.p8\n#include yes.p8\n";
+        assert_eq!(
+            find_includes(lua).collect::<Vec<_>>(),
+            vec!["yes.p8".to_string()]
+        );
+        assert_eq!(
+            patch_includes(lua, |path| format!("-- {path}").into()),
+            "x += 1\nx = \"#include no.p8\"\n-- #include no.p8\n-- yes.p8\n"
+        );
+        assert_eq!(
+            ok("#include foo.p8\nx += 1\n"),
+            "#include foo.p8\nx = x + (1)\n"
+        );
+    }
+
+    #[test]
+    fn try_patch_includes_returns_the_first_error() {
+        let err = try_patch_includes("#include missing.p8\n#include also.p8\n", |path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                path.to_string(),
+            ))
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("missing.p8"), "{err}");
     }
 
     #[test]
