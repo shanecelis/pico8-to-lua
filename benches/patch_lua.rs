@@ -1,16 +1,19 @@
 //! Compare the regex rewriter with the pest rewriter.
 //!
 //! ```sh
-//! cargo bench
+//! cargo bench --features regex
 //! ```
 //!
-//! `regex` is the previous implementation. `parser` is [`pico8_to_lua::patch_lua`].
+//! `regex` is the previous implementation and is measured only with that
+//! feature. `parser` is [`pico8_to_lua::patch_lua`].
 
 use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use pico8_to_lua::{bench_parsed, bench_patch_lua_regex, patch_lua};
+#[cfg(feature = "regex")]
+use pico8_to_lua::bench_patch_lua_regex;
+use pico8_to_lua::{bench_parsed, patch_lua};
 
 /// Plain Lua. Neither rewriter has anything to change.
 const PLAIN: &str = r#"
@@ -76,7 +79,7 @@ fn bench_patch(c: &mut Criterion) {
     for (name, src) in &cases {
         assert!(
             bench_parsed(src),
-            "{name} did not parse; the parser benchmark would time the regex fallback"
+            "{name} did not parse; the parser benchmark would time a parse error"
         );
     }
 
@@ -88,6 +91,7 @@ fn bench_patch(c: &mut Criterion) {
 
     for (name, src) in &cases {
         group.throughput(Throughput::Bytes(src.len() as u64));
+        #[cfg(feature = "regex")]
         group.bench_with_input(BenchmarkId::new("regex", name), src, |b, src| {
             b.iter(|| black_box(bench_patch_lua_regex(black_box(src.as_str()))))
         });

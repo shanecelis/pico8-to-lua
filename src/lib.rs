@@ -1,5 +1,6 @@
 #![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.1.1")]
 #![doc = include_str!("../README.md")]
+#[cfg(feature = "regex")]
 use find_matching_bracket::find_matching_paren;
 use lazy_regex::regex;
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
@@ -116,6 +117,7 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, Parse
     }
 }
 
+#[cfg(feature = "regex")]
 fn patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     let mut lua = lua.into();
     // Replace != with ~=.
@@ -223,6 +225,7 @@ fn patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
 }
 
 /// Regex rewriter, exported so the benchmark can time it against [`patch_lua`].
+#[cfg(feature = "regex")]
 #[doc(hidden)]
 pub fn bench_patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
     patch_lua_regex(lua)
