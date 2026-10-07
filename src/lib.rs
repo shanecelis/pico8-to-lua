@@ -469,8 +469,10 @@ mod tests {
     #[test_case("❎", "5" ; "x button")]
     #[test_case("❎️", "5" ; "x button with variation selector")]
     fn button_glyph_in_code_and_string(glyph: &str, digit: &str) {
-        let src = format!("btn({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
-        let expected = format!("btn({digit})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {digit}");
+        let src =
+            format!("btn({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
+        let expected =
+            format!("btn({digit})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {digit}");
         assert_eq!(ok(&src), expected);
     }
 
@@ -497,8 +499,11 @@ mod tests {
     #[test_case("▤", "3855.5" ; "horiz lines")]
     #[test_case("▥", "21845.5" ; "vert lines")]
     fn fill_glyph_in_code_and_string(glyph: &str, number: &str) {
-        let src = format!("fillp({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
-        let expected = format!("fillp({number})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {number}");
+        let src =
+            format!("fillp({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
+        let expected = format!(
+            "fillp({number})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {number}"
+        );
         assert_eq!(ok(&src), expected);
     }
 
@@ -531,7 +536,8 @@ mod tests {
         // the C0 controls that are not tab, newline, or carriage return.
         let font = format!("{P8_PUNCT}{P8_IDENT_CHARS}{P8_CONTROLS}");
         let src = format!("x = \"{font}\"\ny = '{font}'\nz = [[{font}]]\n-- {font}\n// {font}\n");
-        let expected = format!("x = \"{font}\"\ny = '{font}'\nz = [[{font}]]\n-- {font}\n-- {font}\n");
+        let expected =
+            format!("x = \"{font}\"\ny = '{font}'\nz = [[{font}]]\n-- {font}\n-- {font}\n");
         assert_eq!(ok(&src), expected);
     }
 
