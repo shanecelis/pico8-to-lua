@@ -238,6 +238,7 @@ pub fn bench_parsed(src: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     fn ok(lua: &str) -> Cow<'_, str> {
         patch_lua(lua).unwrap_or_else(|err| panic!("{err}"))
@@ -411,6 +412,24 @@ mod tests {
         let lua = "if btnp(🅾) then end";
         let patched = ok(lua);
         assert_eq!(patched.trim(), "if btnp(4) then end");
+    }
+
+    #[test_case("\u{2B05}", "0" ; "left")]
+    #[test_case("\u{2B05}\u{FE0F}", "0" ; "left with variation selector")]
+    #[test_case("\u{27A1}", "1" ; "right")]
+    #[test_case("\u{27A1}\u{FE0F}", "1" ; "right with variation selector")]
+    #[test_case("\u{2B06}", "2" ; "up")]
+    #[test_case("\u{2B06}\u{FE0F}", "2" ; "up with variation selector")]
+    #[test_case("\u{2B07}", "3" ; "down")]
+    #[test_case("\u{2B07}\u{FE0F}", "3" ; "down with variation selector")]
+    #[test_case("\u{1F17E}", "4" ; "o button")]
+    #[test_case("\u{1F17E}\u{FE0F}", "4" ; "o button with variation selector")]
+    #[test_case("\u{274E}", "5" ; "x button")]
+    #[test_case("\u{274E}\u{FE0F}", "5" ; "x button with variation selector")]
+    fn button_glyph_in_code_and_string(glyph: &str, digit: &str) {
+        let src = format!("btn({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
+        let expected = format!("btn({digit})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {digit}");
+        assert_eq!(ok(&src), expected);
     }
 
     #[test]
