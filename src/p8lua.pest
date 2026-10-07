@@ -10,7 +10,40 @@ COMMENT = _{
 }
 
 hws = _{ " " | "\t" }
-ident_cont = _{ ASCII_ALPHANUMERIC | "_" }
+// P8SCII 0x1e, 0x1f, and 0x80-0xff. Pico-8 accepts these in identifiers.
+// Codes 16-29 and 127 are punctuation; they only occur inside strings.
+p8_char = _{
+    "\u{309B}" | "\u{309C}"
+  | "\u{2588}" | "\u{2592}" | "\u{1F431}" | "\u{2B07}" | "\u{2591}" | "\u{273D}"
+  | "\u{25CF}" | "\u{2665}" | "\u{2609}" | "\u{C6C3}" | "\u{2302}" | "\u{2B05}"
+  | "\u{1F610}" | "\u{266A}" | "\u{1F17E}" | "\u{25C6}" | "\u{2026}" | "\u{27A1}"
+  | "\u{2605}" | "\u{29D7}" | "\u{2B06}" | "\u{02C7}" | "\u{2227}" | "\u{274E}"
+  | "\u{25A4}" | "\u{25A5}"
+  | "\u{3042}" | "\u{3044}" | "\u{3046}" | "\u{3048}" | "\u{304A}"
+  | "\u{304B}" | "\u{304D}" | "\u{304F}" | "\u{3051}" | "\u{3053}"
+  | "\u{3055}" | "\u{3057}" | "\u{3059}" | "\u{305B}" | "\u{305D}"
+  | "\u{305F}" | "\u{3061}" | "\u{3064}" | "\u{3066}" | "\u{3068}"
+  | "\u{306A}" | "\u{306B}" | "\u{306C}" | "\u{306D}" | "\u{306E}"
+  | "\u{306F}" | "\u{3072}" | "\u{3075}" | "\u{3078}" | "\u{307B}"
+  | "\u{307E}" | "\u{307F}" | "\u{3080}" | "\u{3081}" | "\u{3082}"
+  | "\u{3084}" | "\u{3086}" | "\u{3088}"
+  | "\u{3089}" | "\u{308A}" | "\u{308B}" | "\u{308C}" | "\u{308D}"
+  | "\u{308F}" | "\u{3092}" | "\u{3093}"
+  | "\u{3063}" | "\u{3083}" | "\u{3085}" | "\u{3087}"
+  | "\u{30A2}" | "\u{30A4}" | "\u{30A6}" | "\u{30A8}" | "\u{30AA}"
+  | "\u{30AB}" | "\u{30AD}" | "\u{30AF}" | "\u{30B1}" | "\u{30B3}"
+  | "\u{30B5}" | "\u{30B7}" | "\u{30B9}" | "\u{30BB}" | "\u{30BD}"
+  | "\u{30BF}" | "\u{30C1}" | "\u{30C4}" | "\u{30C6}" | "\u{30C8}"
+  | "\u{30CA}" | "\u{30CB}" | "\u{30CC}" | "\u{30CD}" | "\u{30CE}"
+  | "\u{30CF}" | "\u{30D2}" | "\u{30D5}" | "\u{30D8}" | "\u{30DB}"
+  | "\u{30DE}" | "\u{30DF}" | "\u{30E0}" | "\u{30E1}" | "\u{30E2}"
+  | "\u{30E4}" | "\u{30E6}" | "\u{30E8}"
+  | "\u{30E9}" | "\u{30EA}" | "\u{30EB}" | "\u{30EC}" | "\u{30ED}"
+  | "\u{30EF}" | "\u{30F2}" | "\u{30F3}"
+  | "\u{30C3}" | "\u{30E3}" | "\u{30E5}" | "\u{30E7}"
+  | "\u{25DC}" | "\u{25DD}"
+}
+ident_cont = _{ ASCII_ALPHANUMERIC | "_" | p8_char | "\u{FE0F}" }
 
 k_and = @{ "and" ~ !ident_cont }
 k_break = @{ "break" ~ !ident_cont }
@@ -42,7 +75,7 @@ keyword = @{
     | "nil" | "not" | "else" | "do" | "if" | "in" | "or") ~ !ident_cont
 }
 
-name = @{ !keyword ~ (ASCII_ALPHA | "_") ~ ident_cont* }
+name = @{ !keyword ~ (ASCII_ALPHA | "_" | p8_char) ~ ident_cont* }
 
 chunk = { SOI ~ block ~ EOI }
 block = _{ stmt* }
@@ -140,16 +173,17 @@ unary = _{ (unary_op ~ hws* ~ unary) | pow_expr }
 unary_op = @{ k_not | "#" | "-" ~ !"=" | "~" ~ !"=" }
 pow_expr = _{ primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
 
-// Names and calls are the common case, so they are tried before literals.
+// A lone Shift-glyph is a number, so it is tried before names. `♥.x` still
+// parses as a name because the glyph rule stops at `.`, `:`, `(`, or more name.
 primary = _{
-    prefix_exp
+    button
+  | prefix_exp
   | number
   | string
   | k_nil | k_false | k_true
   | "..."
   | function_expr
   | table
-  | button
 }
 
 // One pass over a name or `(expr)`, then any `.` / `[]` / call suffixes.
@@ -224,11 +258,15 @@ long_brackets = @{
     "[" ~ PUSH("="*) ~ "[" ~ (!("]" ~ PEEK ~ "]") ~ ANY)* ~ "]" ~ POP ~ "]"
 }
 
-button = @{
-    "⬅" ~ "\u{FE0F}"?
-  | "➡" ~ "\u{FE0F}"?
-  | "⬆" ~ "\u{FE0F}"?
-  | "⬇" ~ "\u{FE0F}"?
-  | "🅾" ~ "\u{FE0F}"?
-  | "❎" ~ "\u{FE0F}"?
+// Shift+A..Z. Six are button indexes; the other twenty are fillp() patterns.
+// Optional U+FE0F is how Pico-8 writes the arrow and O keys into a .p8 file.
+// Same-line spaces only: a newline starts the next statement, not a longer name.
+button = @{ glyph_chars ~ !glyph_follower }
+glyph_chars = _{
+    ("\u{2B05}" | "\u{27A1}" | "\u{2B06}" | "\u{2B07}" | "\u{1F17E}" | "\u{274E}") ~ "\u{FE0F}"?
+  | "\u{2588}" | "\u{2592}" | "\u{1F431}" | "\u{2591}" | "\u{273D}" | "\u{25CF}"
+  | "\u{2665}" | "\u{2609}" | "\u{C6C3}" | "\u{2302}" | "\u{1F610}" | "\u{266A}"
+  | "\u{25C6}" | "\u{2026}" | "\u{2605}" | "\u{29D7}" | "\u{02C7}" | "\u{2227}"
+  | "\u{25A4}" | "\u{25A5}"
 }
+glyph_follower = _{ hws* ~ (ident_cont | "." | ":" | "(") }

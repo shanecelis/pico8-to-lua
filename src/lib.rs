@@ -244,6 +244,48 @@ mod tests {
         patch_lua(lua).unwrap_or_else(|err| panic!("{err}"))
     }
 
+    /// P8SCII 16–29 and 127. Icons and Japanese punctuation, not identifiers.
+    const P8_PUNCT: &str = "\
+        \u{25AE}\u{25A0}\u{25A1}\u{2059}\u{2058}\u{2016}\u{25C0}\u{25B6}\
+        \u{300C}\u{300D}\u{00A5}\u{2022}\u{3001}\u{3002}\u{25CB}";
+
+    /// P8SCII 30–31 and 128–255, the characters Pico-8 allows in a name.
+    const P8_IDENT_CHARS: &str = "\
+        \u{309B}\u{309C}\
+        \u{2588}\u{2592}\u{1F431}\u{2B07}\u{2591}\u{273D}\u{25CF}\u{2665}\
+        \u{2609}\u{C6C3}\u{2302}\u{2B05}\u{1F610}\u{266A}\u{1F17E}\u{25C6}\
+        \u{2026}\u{27A1}\u{2605}\u{29D7}\u{2B06}\u{02C7}\u{2227}\u{274E}\
+        \u{25A4}\u{25A5}\
+        \u{3042}\u{3044}\u{3046}\u{3048}\u{304A}\
+        \u{304B}\u{304D}\u{304F}\u{3051}\u{3053}\
+        \u{3055}\u{3057}\u{3059}\u{305B}\u{305D}\
+        \u{305F}\u{3061}\u{3064}\u{3066}\u{3068}\
+        \u{306A}\u{306B}\u{306C}\u{306D}\u{306E}\
+        \u{306F}\u{3072}\u{3075}\u{3078}\u{307B}\
+        \u{307E}\u{307F}\u{3080}\u{3081}\u{3082}\
+        \u{3084}\u{3086}\u{3088}\
+        \u{3089}\u{308A}\u{308B}\u{308C}\u{308D}\
+        \u{308F}\u{3092}\u{3093}\
+        \u{3063}\u{3083}\u{3085}\u{3087}\
+        \u{30A2}\u{30A4}\u{30A6}\u{30A8}\u{30AA}\
+        \u{30AB}\u{30AD}\u{30AF}\u{30B1}\u{30B3}\
+        \u{30B5}\u{30B7}\u{30B9}\u{30BB}\u{30BD}\
+        \u{30BF}\u{30C1}\u{30C4}\u{30C6}\u{30C8}\
+        \u{30CA}\u{30CB}\u{30CC}\u{30CD}\u{30CE}\
+        \u{30CF}\u{30D2}\u{30D5}\u{30D8}\u{30DB}\
+        \u{30DE}\u{30DF}\u{30E0}\u{30E1}\u{30E2}\
+        \u{30E4}\u{30E6}\u{30E8}\
+        \u{30E9}\u{30EA}\u{30EB}\u{30EC}\u{30ED}\
+        \u{30EF}\u{30F2}\u{30F3}\
+        \u{30C3}\u{30E3}\u{30E5}\u{30E7}\
+        \u{25DC}\u{25DD}";
+
+    /// Unicode Pico-8 writes for C0 controls other than tab, newline, and CR.
+    /// The wiki lists these in the P8SCII control-code table.
+    const P8_CONTROLS: &str = "\
+        \u{00B9}\u{00B2}\u{00B3}\u{2074}\u{2075}\u{2076}\u{2077}\u{2078}\
+        \u{1D47}\u{1D9C}\u{1D49}\u{1DA0}";
+
     #[test]
     fn test_not_equal_replacement() {
         let lua = "if a != b then print(a) end";
@@ -430,6 +472,75 @@ mod tests {
         let src = format!("btn({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
         let expected = format!("btn({digit})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {digit}");
         assert_eq!(ok(&src), expected);
+    }
+
+    // The other twenty Shift+letter glyphs. Pico-8 predefines them as fillp()
+    // patterns; `.5` is the transparency bit. Strings keep the character.
+    #[test_case("\u{2588}", "0.5" ; "rectangle")]
+    #[test_case("\u{2592}", "23130.5" ; "checkerboard")]
+    #[test_case("\u{1F431}", "20767.5" ; "jelpi")]
+    #[test_case("\u{2591}", "32125.5" ; "dot pattern")]
+    #[test_case("\u{273D}", "-18402.5" ; "throwing star")]
+    #[test_case("\u{25CF}", "-1632.5" ; "ball")]
+    #[test_case("\u{2665}", "20927.5" ; "heart")]
+    #[test_case("\u{2609}", "-19008.5" ; "eye")]
+    #[test_case("\u{C6C3}", "-26208.5" ; "man")]
+    #[test_case("\u{2302}", "-20192.5" ; "house")]
+    #[test_case("\u{1F610}", "-24351.5" ; "face")]
+    #[test_case("\u{266A}", "-25792.5" ; "musical note")]
+    #[test_case("\u{25C6}", "-20032.5" ; "diamond")]
+    #[test_case("\u{2026}", "-2560.5" ; "ellipsis")]
+    #[test_case("\u{2605}", "-20128.5" ; "star")]
+    #[test_case("\u{29D7}", "6943.5" ; "hourglass")]
+    #[test_case("\u{02C7}", "-2624.5" ; "birds")]
+    #[test_case("\u{2227}", "31455.5" ; "sawtooth")]
+    #[test_case("\u{25A4}", "3855.5" ; "horiz lines")]
+    #[test_case("\u{25A5}", "21845.5" ; "vert lines")]
+    fn fill_glyph_in_code_and_string(glyph: &str, number: &str) {
+        let src = format!("fillp({glyph})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {glyph}");
+        let expected = format!("fillp({number})\nx = \"{glyph}\"\ny = '{glyph}'\nz = [[{glyph}]]\nw = {number}");
+        assert_eq!(ok(&src), expected);
+    }
+
+    #[test]
+    fn glyph_used_as_a_name_stays() {
+        // Pico-8's preprocessor accepts `♥.x += 1`. The glyph is a variable
+        // there, not the fill-pattern constant.
+        assert_eq!(ok("♥.x += 1"), "♥.x = ♥.x + (1)");
+        assert_eq!(ok("♥ = 1\n❎ = 2"), "♥ = 1\n❎ = 2");
+        assert_eq!(ok("❎foo = 1"), "❎foo = 1");
+        assert_eq!(ok("if (♥) x+=1"), "if 20927.5 then x = x + (1) end");
+        assert_eq!(ok("y = x^█"), "y = x^0.5");
+        // U+2026 is the ellipsis glyph, not Lua's `...`.
+        assert_eq!(ok("f(…)\nreturn ..."), "f(-2560.5)\nreturn ...");
+    }
+
+    #[test]
+    fn p8scii_identifier_characters_stay() {
+        // Dakuten, handakuten, kana, arcs, and the Shift glyphs as names.
+        for ch in P8_IDENT_CHARS.chars() {
+            let src = format!("local {ch} = 1\n{ch}.a += 2\n");
+            let expected = format!("local {ch} = 1\n{ch}.a = {ch}.a + (2)\n");
+            assert_eq!(ok(&src), expected, "U+{:04X}", u32::from(ch));
+        }
+    }
+
+    #[test]
+    fn p8scii_font_stays_in_strings_and_comments() {
+        // Printable P8SCII outside ASCII, plus the unicode Pico-8 stores for
+        // the C0 controls that are not tab, newline, or carriage return.
+        let font = format!("{P8_PUNCT}{P8_IDENT_CHARS}{P8_CONTROLS}");
+        let src = format!("x = \"{font}\"\ny = '{font}'\nz = [[{font}]]\n-- {font}\n// {font}\n");
+        let expected = format!("x = \"{font}\"\ny = '{font}'\nz = [[{font}]]\n-- {font}\n-- {font}\n");
+        assert_eq!(ok(&src), expected);
+    }
+
+    #[test]
+    fn p8scii_punctuation_is_not_a_number() {
+        // Codes 16-29 and the hollow circle are not the Shift-glyph constants.
+        let err = patch_lua("x = ■").unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("expected"), "{message}");
     }
 
     #[test]

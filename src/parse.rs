@@ -493,6 +493,10 @@ fn bits_to_hex(bits: &str, pad_left: bool) -> String {
     }
 }
 
+/// Shift+letter glyphs Pico-8 predefines as numbers.
+///
+/// Buttons are 0–5. The other twenty are `fillp` patterns: the integer is the
+/// signed 16-bit pattern, and `.5` is the transparency bit.
 fn button_digit(text: &str) -> String {
     match text.trim_end_matches('\u{fe0f}') {
         "⬅" => "0",
@@ -501,6 +505,26 @@ fn button_digit(text: &str) -> String {
         "⬇" => "3",
         "🅾" => "4",
         "❎" => "5",
+        "█" => "0.5",
+        "▒" => "23130.5",
+        "🐱" => "20767.5",
+        "░" => "32125.5",
+        "✽" => "-18402.5",
+        "●" => "-1632.5",
+        "♥" => "20927.5",
+        "☉" => "-19008.5",
+        "웃" => "-26208.5",
+        "⌂" => "-20192.5",
+        "😐" => "-24351.5",
+        "♪" => "-25792.5",
+        "◆" => "-20032.5",
+        "…" => "-2560.5",
+        "★" => "-20128.5",
+        "⧗" => "6943.5",
+        "ˇ" => "-2624.5",
+        "∧" => "31455.5",
+        "▤" => "3855.5",
+        "▥" => "21845.5",
         other => other,
     }
     .to_string()
