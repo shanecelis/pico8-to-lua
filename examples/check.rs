@@ -3,6 +3,7 @@
 //! ```sh
 //! cargo run --example check a.p8 b.p8
 //! cargo run --example check -r carts/
+//! cargo run --example check -q -r carts/
 //! ```
 use clap::Parser;
 use pico8_to_lua::patch_lua;
@@ -19,6 +20,10 @@ struct Args {
     #[arg(short, long)]
     recurse: bool,
 
+    /// Print failures only.
+    #[arg(short, long)]
+    quiet: bool,
+
     /// Files and directories to check.
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -26,12 +31,12 @@ struct Args {
 
 fn main() -> ExitCode {
     let args = Args::parse();
-    let (code, report) = execute(args.recurse, &args.files);
+    let (code, report) = execute(args.recurse, args.quiet, &args.files);
     print!("{report}");
     code
 }
 
-fn execute(recurse: bool, files: &[PathBuf]) -> (ExitCode, String) {
+fn execute(recurse: bool, quiet: bool, files: &[PathBuf]) -> (ExitCode, String) {
     let mut failed = 0usize;
     let mut checked = 0usize;
     let mut seen_dirs = HashSet::new();
@@ -40,6 +45,7 @@ fn execute(recurse: bool, files: &[PathBuf]) -> (ExitCode, String) {
         visit(
             path,
             recurse,
+            quiet,
             &mut seen_dirs,
             &mut failed,
             &mut checked,
@@ -48,7 +54,9 @@ fn execute(recurse: bool, files: &[PathBuf]) -> (ExitCode, String) {
     }
 
     if failed == 0 {
-        let _ = writeln!(report, "{} {} ok", checked, files_word(checked));
+        if !quiet {
+            let _ = writeln!(report, "{} {} ok", checked, files_word(checked));
+        }
         (ExitCode::SUCCESS, report)
     } else {
         let _ = writeln!(report, "{failed} of {checked} failed");
@@ -63,6 +71,7 @@ fn files_word(n: usize) -> &'static str {
 fn visit(
     path: &Path,
     recurse: bool,
+    quiet: bool,
     seen_dirs: &mut HashSet<PathBuf>,
     failed: &mut usize,
     checked: &mut usize,
@@ -79,11 +88,13 @@ fn visit(
     };
     if meta.is_dir() {
         if !recurse {
-            let _ = writeln!(
-                report,
-                "WARN {}: directory (pass -r to recurse)",
-                path.display()
-            );
+            if !quiet {
+                let _ = writeln!(
+                    report,
+                    "WARN {}: directory (pass -r to recurse)",
+                    path.display()
+                );
+            }
             return;
         }
         if let Ok(canonical) = fs::canonicalize(path) {
@@ -109,20 +120,30 @@ fn visit(
         };
         children.sort();
         for child in children {
-            visit(&child, true, seen_dirs, failed, checked, report);
+            visit(&child, true, quiet, seen_dirs, failed, checked, report);
         }
         return;
     }
     if !is_source(path) {
-        let _ = writeln!(report, "IGNORE {}", path.display());
+        if !quiet {
+            let _ = writeln!(report, "IGNORE {}", path.display());
+        }
         return;
     }
-    *checked += 1;
     match translate(path) {
-        Ok(()) => {
-            let _ = writeln!(report, "ok {}", path.display());
+        Translated::Ok => {
+            *checked += 1;
+            if !quiet {
+                let _ = writeln!(report, "ok {}", path.display());
+            }
         }
-        Err(err) => {
+        Translated::Warn(message) => {
+            if !quiet {
+                let _ = writeln!(report, "WARN {}: {message}", path.display());
+            }
+        }
+        Translated::Fail(err) => {
+            *checked += 1;
             *failed += 1;
             let _ = writeln!(report, "FAIL {}\n{err}", path.display());
         }
@@ -136,12 +157,24 @@ fn is_source(path: &Path) -> bool {
     )
 }
 
-fn translate(path: &Path) -> Result<(), String> {
-    let input = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let src = lua_source(&input)?;
+enum Translated {
+    Ok,
+    Warn(String),
+    Fail(String),
+}
+
+fn translate(path: &Path) -> Translated {
+    let input = match fs::read_to_string(path) {
+        Ok(input) => input,
+        Err(err) => return Translated::Fail(err.to_string()),
+    };
+    let src = match lua_source(&input) {
+        Ok(src) => src,
+        Err(message) => return Translated::Warn(message),
+    };
     match patch_lua(src) {
-        Ok(_) => Ok(()),
-        Err(err) => Err(format!("{}:{}\n{err}", err.line, err.column)),
+        Ok(_) => Translated::Ok,
+        Err(err) => Translated::Fail(format!("{}:{}\n{err}", err.line, err.column)),
     }
 }
 
@@ -191,7 +224,11 @@ mod tests {
     }
 
     fn run(recurse: bool, files: &[PathBuf]) -> (u8, String) {
-        let (code, report) = execute(recurse, files);
+        run_with(recurse, false, files)
+    }
+
+    fn run_with(recurse: bool, quiet: bool, files: &[PathBuf]) -> (u8, String) {
+        let (code, report) = execute(recurse, quiet, files);
         let code = match code {
             ExitCode::SUCCESS => 0,
             _ => 1,
@@ -243,7 +280,16 @@ mod tests {
     fn recurse_flag() {
         let args = Args::try_parse_from(["check", "-r", "carts"]).unwrap();
         assert!(args.recurse);
+        assert!(!args.quiet);
         assert_eq!(args.files, vec![PathBuf::from("carts")]);
+    }
+
+    #[test]
+    fn quiet_flag() {
+        let args = Args::try_parse_from(["check", "-q", "a.p8"]).unwrap();
+        assert!(args.quiet);
+        assert!(!args.recurse);
+        assert_eq!(args.files, vec![PathBuf::from("a.p8")]);
     }
 
     #[test]
@@ -262,6 +308,23 @@ mod tests {
             "{report}"
         );
         assert!(report.contains("1 file ok"), "{report}");
+    }
+
+    #[test]
+    fn warns_when_a_cart_has_no_lua_section() {
+        let dir = Dir::new("nolua");
+        let cart = dir.write(
+            "gfx.p8",
+            "pico-8 cartridge // http://www.pico-8.com\nversion 43\n__gfx__\n00\n",
+        );
+        let (code, report) = run(false, &[cart.clone()]);
+        assert_eq!(code, 0, "{report}");
+        assert!(
+            report.contains(&format!("WARN {}: no __lua__ section", cart.display())),
+            "{report}"
+        );
+        assert!(!report.contains("FAIL"), "{report}");
+        assert!(report.contains("0 files ok"), "{report}");
     }
 
     #[test]
@@ -320,5 +383,38 @@ mod tests {
         );
         assert!(!report.contains("WARN"), "{report}");
         assert!(report.contains("1 of 3 failed"), "{report}");
+    }
+
+    #[test]
+    fn quiet_prints_only_failures() {
+        let dir = Dir::new("quiet");
+        let ok = dir.write("ok.lua", "x = 1\n");
+        let bad = dir.write("bad.lua", "@@\n");
+        let notes = dir.write("notes.txt", "hello\n");
+        let cart = dir.write(
+            "gfx.p8",
+            "pico-8 cartridge // http://www.pico-8.com\nversion 43\n__gfx__\n00\n",
+        );
+        let (code, report) = run_with(false, true, &[ok, bad.clone(), notes, cart, dir.0.clone()]);
+        assert_eq!(code, 1, "{report}");
+        assert!(
+            report.contains(&format!("FAIL {}\n1:1\n", bad.display())),
+            "{report}"
+        );
+        assert!(report.contains("@@"), "{report}");
+        assert!(!report.contains("ok "), "{report}");
+        assert!(!report.contains("IGNORE"), "{report}");
+        assert!(!report.contains("WARN"), "{report}");
+        assert!(report.contains("1 of 2 failed"), "{report}");
+    }
+
+    #[test]
+    fn quiet_with_no_failures_prints_nothing() {
+        let dir = Dir::new("quiet-ok");
+        let lua = dir.write("plain.lua", "x = 1\n");
+        let notes = dir.write("notes.txt", "hello\n");
+        let (code, report) = run_with(false, true, &[lua, notes]);
+        assert_eq!(code, 0, "{report}");
+        assert_eq!(report, "");
     }
 }
