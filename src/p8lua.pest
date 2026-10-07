@@ -43,7 +43,8 @@ p8_char = _{
   | "ッ" | "ャ" | "ュ" | "ョ"
   | "◜" | "◝"
 }
-ident_cont = _{ ASCII_ALPHANUMERIC | "_" | p8_char | "️" }
+// ASCII fails before the Unicode alternation. Plain Lua never builds a P8SCII char.
+ident_cont = _{ ASCII_ALPHANUMERIC | "_" | (!ASCII ~ (p8_char | "️")) }
 
 k_and = @{ "and" ~ !ident_cont }
 k_break = @{ "break" ~ !ident_cont }
@@ -75,7 +76,7 @@ keyword = @{
     | "nil" | "not" | "else" | "do" | "if" | "in" | "or") ~ !ident_cont
 }
 
-name = @{ !keyword ~ (ASCII_ALPHA | "_" | p8_char) ~ ident_cont* }
+name = @{ !keyword ~ (ASCII_ALPHA | "_" | (!ASCII ~ p8_char)) ~ ident_cont* }
 
 chunk = { SOI ~ block ~ EOI }
 block = _{ stmt* }
@@ -202,13 +203,13 @@ prefix_exp = _{
     ~ (hws* ~ (dot_suffix_bare | call_suffix))*
 }
 
-// `f().x = 1` is an assignment. The last field stays outside the repeat: a
-// repeat will not give it back, and `=` has to see it.
+// `name` and `name.field` are the common case and stop before `(` or `:`.
+// `f().x = 1` and `obj:m().x = 1` take the call form. The last field stays
+// outside that repeat: a repeat will not give it back, and `=` has to see it.
 var = {
-    simple_prefix
-    ~ (hws* ~ var_suffix)*
-    ~ hws* ~ dot_suffix_bare
-  | name
+    name ~ (hws* ~ dot_suffix_bare)* ~ !(hws* ~ ("(" | ":"))
+  | ("(" ~ hws* ~ expr ~ hws* ~ ")") ~ (hws* ~ dot_suffix_bare)+
+  | simple_prefix ~ (hws* ~ var_suffix)* ~ hws* ~ dot_suffix_bare
 }
 // A field joins the repeat only when another field or a call follows it.
 var_suffix = _{
@@ -281,7 +282,7 @@ long_brackets = @{
 // Shift+A..Z. Six are button indexes; the other twenty are fillp() patterns.
 // Optional U+FE0F is how Pico-8 writes the arrow and O keys into a .p8 file.
 // Same-line spaces only: a newline starts the next statement, not a longer name.
-button = @{ glyph_chars ~ !glyph_follower }
+button = @{ !ASCII ~ glyph_chars ~ !glyph_follower }
 glyph_chars = _{
     ("⬅" | "➡" | "⬆" | "⬇" | "🅾" | "❎") ~ "️"?
   | "█" | "▒" | "🐱" | "░" | "✽" | "●"

@@ -46,10 +46,10 @@ impl std::error::Error for ParseError {}
 #[grammar = "src/p8lua.pest"]
 struct P8LuaParser;
 
-struct Edit {
+struct Edit<'a> {
     start: usize,
     end: usize,
-    replacement: String,
+    replacement: Cow<'a, str>,
 }
 
 /// Parse `src` and rewrite Pico-8 dialect, preserving everything else.
@@ -126,54 +126,71 @@ fn directive_at_line_start(src: &str, hash: usize) -> bool {
     i == 0 || matches!(bytes[i - 1], b'\n' | b'\r')
 }
 
-fn collect(pair: pest::iterators::Pair<'_, Rule>, src: &str, edits: &mut Vec<Edit>) {
+fn collect<'a>(pair: pest::iterators::Pair<'a, Rule>, src: &'a str, edits: &mut Vec<Edit<'a>>) {
     let rule = pair.as_rule();
     let span = pair.as_span();
     let start = span.start();
     let end = span.end();
-    let children: Vec<_> = pair.into_inner().collect();
-    for child in &children {
-        collect(child.clone(), src, edits);
+    let text = span.as_str();
+
+    // Only the rewrites that read child spans keep the children. Every other
+    // node is walked without allocating a child list.
+    if matches!(
+        rule,
+        Rule::compound_assign | Rule::shorthand_if | Rule::shorthand_while
+    ) {
+        let children: Vec<_> = pair.into_inner().collect();
+        for child in &children {
+            collect(child.clone(), src, edits);
+        }
+        match rule {
+            Rule::compound_assign => {
+                let var = child_span(&children, Rule::var);
+                let op = child_str(&children, Rule::compound_op);
+                let exp = child_span(&children, Rule::expr);
+                if let (Some((vs, ve)), Some(op), Some((es, ee))) = (var, op, exp) {
+                    // Implicit skip sticks to the span when a later repeat or optional fails.
+                    let ve = code_end(src, vs, ve);
+                    let ee = code_end(src, es, ee);
+                    let end = code_end(src, start, end);
+                    let bin = &op[..op.len() - 1];
+                    let var_txt = materialize(src, vs, ve, edits);
+                    let exp_txt = materialize(src, es, ee, edits);
+                    edits.push(Edit {
+                        start,
+                        end,
+                        replacement: Cow::Owned(format!("{var_txt} = {var_txt} {bin} ({exp_txt})")),
+                    });
+                }
+            }
+            Rule::shorthand_if => {
+                if let Some(repl) = shorthand_replacement(src, &children, "if", "then", edits) {
+                    edits.push(Edit {
+                        start,
+                        end: code_end(src, start, end),
+                        replacement: Cow::Owned(repl),
+                    });
+                }
+            }
+            Rule::shorthand_while => {
+                if let Some(repl) = shorthand_replacement(src, &children, "while", "do", edits) {
+                    edits.push(Edit {
+                        start,
+                        end: code_end(src, start, end),
+                        replacement: Cow::Owned(repl),
+                    });
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    for child in pair.into_inner() {
+        collect(child, src, edits);
     }
 
     match rule {
-        Rule::compound_assign => {
-            let var = child_span(&children, Rule::var);
-            let op = child_str(&children, Rule::compound_op);
-            let exp = child_span(&children, Rule::expr);
-            if let (Some((vs, ve)), Some(op), Some((es, ee))) = (var, op, exp) {
-                // Implicit skip sticks to the span when a later repeat or optional fails.
-                let ve = code_end(src, vs, ve);
-                let ee = code_end(src, es, ee);
-                let end = code_end(src, start, end);
-                let bin = &op[..op.len() - 1];
-                let var_txt = materialize(src, vs, ve, edits);
-                let exp_txt = materialize(src, es, ee, edits);
-                edits.push(Edit {
-                    start,
-                    end,
-                    replacement: format!("{var_txt} = {var_txt} {bin} ({exp_txt})"),
-                });
-            }
-        }
-        Rule::shorthand_if => {
-            if let Some(repl) = shorthand_replacement(src, &children, "if", "then", edits) {
-                edits.push(Edit {
-                    start,
-                    end: code_end(src, start, end),
-                    replacement: repl,
-                });
-            }
-        }
-        Rule::shorthand_while => {
-            if let Some(repl) = shorthand_replacement(src, &children, "while", "do", edits) {
-                edits.push(Edit {
-                    start,
-                    end: code_end(src, start, end),
-                    replacement: repl,
-                });
-            }
-        }
         Rule::print_stmt if start < end && src.as_bytes().get(start) == Some(&b'?') => {
             let end = code_end(src, start, end);
             let args_start = trim_ws_start(src, start + 1, end);
@@ -181,35 +198,35 @@ fn collect(pair: pest::iterators::Pair<'_, Rule>, src: &str, edits: &mut Vec<Edi
             edits.push(Edit {
                 start,
                 end,
-                replacement: format!("print({args})"),
+                replacement: Cow::Owned(format!("print({args})")),
             });
         }
-        Rule::if_then if span.as_str() == "do" => {
+        Rule::if_then if text == "do" => {
             edits.push(Edit {
                 start,
                 end,
-                replacement: "then".to_string(),
+                replacement: Cow::Borrowed("then"),
             });
         }
-        Rule::cmp_op if span.as_str() == "!=" => {
+        Rule::cmp_op if text == "!=" => {
             edits.push(Edit {
                 start,
                 end,
-                replacement: "~=".to_string(),
+                replacement: Cow::Borrowed("~="),
             });
         }
         Rule::binary => {
             edits.push(Edit {
                 start,
                 end,
-                replacement: binary_to_hex(span.as_str()),
+                replacement: Cow::Owned(binary_to_hex(text)),
             });
         }
         Rule::button => {
             edits.push(Edit {
                 start,
                 end,
-                replacement: button_digit(span.as_str()),
+                replacement: button_digit(text),
             });
         }
         _ => {}
@@ -222,7 +239,7 @@ fn shorthand_replacement(
     children: &[pest::iterators::Pair<'_, Rule>],
     keyword: &str,
     opener: &str,
-    edits: &[Edit],
+    edits: &[Edit<'_>],
 ) -> Option<String> {
     let (cs, ce) = child_span(children, Rule::expr)?;
     let cond = materialize(src, cs, code_end(src, cs, ce), edits);
@@ -260,7 +277,7 @@ fn child_str<'a>(children: &'a [pest::iterators::Pair<'_, Rule>], rule: Rule) ->
         .map(|c| c.as_str())
 }
 
-fn materialize_trimmed(src: &str, start: usize, end: usize, edits: &[Edit]) -> String {
+fn materialize_trimmed(src: &str, start: usize, end: usize, edits: &[Edit<'_>]) -> String {
     materialize(src, start, code_end(src, start, end), edits)
 }
 
@@ -380,7 +397,7 @@ fn skip_long_brackets(bytes: &[u8], i: usize, limit: usize) -> Option<usize> {
 }
 
 /// Apply `edits` that sit inside `start..end`. A larger edit hides the ones it contains.
-fn materialize(src: &str, start: usize, end: usize, edits: &[Edit]) -> String {
+fn materialize(src: &str, start: usize, end: usize, edits: &[Edit<'_>]) -> String {
     let mut relevant: Vec<&Edit> = edits
         .iter()
         .filter(|e| e.start >= start && e.end <= end && e.start < e.end)
@@ -403,7 +420,7 @@ fn materialize(src: &str, start: usize, end: usize, edits: &[Edit]) -> String {
 
 /// `//` comments live in the gaps between tokens (whitespace and comments).
 /// Strings are tokens, so a `//` inside one is not a gap.
-fn gap_comment_edits(src: &str, chunk: &pest::iterators::Pair<'_, Rule>) -> Vec<Edit> {
+fn gap_comment_edits<'a>(src: &'a str, chunk: &pest::iterators::Pair<'_, Rule>) -> Vec<Edit<'a>> {
     let mut leaves = Vec::new();
     collect_leaves(chunk.clone(), &mut leaves);
     leaves.sort_by_key(|span| span.0);
@@ -425,6 +442,8 @@ fn gap_comment_edits(src: &str, chunk: &pest::iterators::Pair<'_, Rule>) -> Vec<
 
 fn collect_leaves(pair: pest::iterators::Pair<'_, Rule>, leaves: &mut Vec<(usize, usize)>) {
     let span = pair.as_span();
+    let start = span.start();
+    let end = span.end();
     // Keep string and number text intact so `//` and `!=` inside them are not gaps.
     if matches!(
         pair.as_rule(),
@@ -436,24 +455,22 @@ fn collect_leaves(pair: pest::iterators::Pair<'_, Rule>, leaves: &mut Vec<(usize
             | Rule::long_brackets
             | Rule::short_string
     ) {
-        if span.start() < span.end() {
-            leaves.push((span.start(), span.end()));
+        if start < end {
+            leaves.push((start, end));
         }
         return;
     }
-    let children: Vec<_> = pair.into_inner().collect();
-    if children.is_empty() {
-        if span.start() < span.end() {
-            leaves.push((span.start(), span.end()));
-        }
-        return;
-    }
-    for child in children {
+    let mut saw_child = false;
+    for child in pair.into_inner() {
+        saw_child = true;
         collect_leaves(child, leaves);
+    }
+    if !saw_child && start < end {
+        leaves.push((start, end));
     }
 }
 
-fn rewrite_comment_gap(gap: &str, base: usize, edits: &mut Vec<Edit>) {
+fn rewrite_comment_gap<'a>(gap: &'a str, base: usize, edits: &mut Vec<Edit<'a>>) {
     let bytes = gap.as_bytes();
     let mut i = 0;
     while i + 1 < bytes.len() {
@@ -465,7 +482,7 @@ fn rewrite_comment_gap(gap: &str, base: usize, edits: &mut Vec<Edit>) {
             edits.push(Edit {
                 start: base + i,
                 end: base + i + 2,
-                replacement: "--".to_string(),
+                replacement: Cow::Borrowed("--"),
             });
             i = skip_line(bytes, i + 2);
             continue;
@@ -559,8 +576,8 @@ fn bits_to_hex(bits: &str, pad_left: bool) -> String {
 ///
 /// Buttons are 0–5. The other twenty are `fillp` patterns: the integer is the
 /// signed 16-bit pattern, and `.5` is the transparency bit.
-fn button_digit(text: &str) -> String {
-    match text.trim_end_matches('️') {
+fn button_digit(text: &str) -> Cow<'static, str> {
+    Cow::Borrowed(match text.trim_end_matches('️') {
         "⬅" => "0",
         "➡" => "1",
         "⬆" => "2",
@@ -587,7 +604,6 @@ fn button_digit(text: &str) -> String {
         "∧" => "31455.5",
         "▤" => "3855.5",
         "▥" => "21845.5",
-        other => other,
-    }
-    .to_string()
+        _ => return Cow::Owned(text.trim_end_matches('️').to_string()),
+    })
 }
