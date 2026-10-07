@@ -498,7 +498,7 @@ fn bits_to_hex(bits: &str, pad_left: bool) -> String {
 /// Buttons are 0–5. The other twenty are `fillp` patterns: the integer is the
 /// signed 16-bit pattern, and `.5` is the transparency bit.
 fn button_digit(text: &str) -> String {
-    match text.trim_end_matches('\u{fe0f}') {
+    match text.trim_end_matches('️') {
         "⬅" => "0",
         "➡" => "1",
         "⬆" => "2",
