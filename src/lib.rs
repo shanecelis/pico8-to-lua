@@ -325,6 +325,13 @@ mod tests {
     }
 
     #[test]
+    fn test_assign_field_of_call() {
+        // celeste.p8: store a field on the table the call returns.
+        let lua = "init_object(platform,tx*8,ty*8).dir=-1\n";
+        assert_eq!(ok(lua), lua);
+    }
+
+    #[test]
     fn test_shorthand_if_rewrite_and() {
         let lua = "if (not b and not c) i = 1\n";
         let expected = "if not b and not c then i = 1 end\n";

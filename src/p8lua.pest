@@ -195,8 +195,19 @@ prefix_exp = _{
     ~ (hws* ~ (dot_suffix_bare | call_suffix))*
 }
 
-var = { name ~ dot_suffix* | ("(" ~ hws* ~ expr ~ hws* ~ ")") ~ dot_suffix+ }
-dot_suffix = _{ hws* ~ ("." ~ hws* ~ name | "[" ~ hws* ~ expr ~ hws* ~ "]") }
+// `f().x = 1` is an assignment. The last field stays outside the repeat: a
+// repeat will not give it back, and `=` has to see it.
+var = {
+    simple_prefix
+    ~ (hws* ~ var_suffix)*
+    ~ hws* ~ dot_suffix_bare
+  | name
+}
+// A field joins the repeat only when another field or a call follows it.
+var_suffix = _{
+    call_suffix
+  | dot_suffix_bare ~ &(hws* ~ (call_suffix | dot_suffix_bare))
+}
 
 // A repeat does not backtrack, so dots are consumed first and the required
 // call stays put. Otherwise `obj:step()` and `(e):map()` lose their call.
