@@ -166,11 +166,13 @@ shift_expr = _{ concat_expr ~ (hws* ~ shift_op ~ hws* ~ concat_expr)* }
 shift_op = @{ "<<>" | ">><" | ">>>" | "<<" | ">>" }
 concat_expr = _{ add_expr ~ (hws* ~ ".." ~ !"." ~ hws* ~ concat_expr)? }
 add_expr = _{ mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
-add_op = @{ "+" ~ !"=" | "-" ~ !"=" }
+// `-"-"` keeps `--` a comment. Shorthand if/while is compound-atomic, so the
+// usual comment skip is off and a trailing `--` would otherwise be two minuses.
+add_op = @{ "+" ~ !"=" | "-" ~ !"-" ~ !"=" }
 mul_expr = _{ unary ~ (hws* ~ mul_op ~ hws* ~ unary)* }
 mul_op = @{ "*" ~ !"=" | "/" ~ !"/" ~ !"=" | "%" ~ !"=" | "\\" ~ !"=" }
 unary = _{ (unary_op ~ hws* ~ unary) | pow_expr }
-unary_op = @{ k_not | "#" | "-" ~ !"=" | "~" ~ !"=" }
+unary_op = @{ k_not | "#" | "-" ~ !"-" ~ !"=" | "~" ~ !"=" }
 pow_expr = _{ primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
 
 // A lone Shift-glyph is a number, so it is tried before names. `♥.x` still
