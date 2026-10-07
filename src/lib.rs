@@ -317,6 +317,14 @@ mod tests {
     }
 
     #[test]
+    fn test_shorthand_if_compound_with_dash_comment() {
+        // jelpi.p8: a trailing `--` on a shorthand if is a comment, not minus.
+        let lua = "if (j==2) hx -=.5 --hy-=.7\n";
+        let expected = "if j==2 then hx = hx - (.5) end --hy-=.7\n";
+        assert_eq!(ok(lua), expected);
+    }
+
+    #[test]
     fn test_shorthand_if_rewrite_and() {
         let lua = "if (not b and not c) i = 1\n";
         let expected = "if not b and not c then i = 1 end\n";
