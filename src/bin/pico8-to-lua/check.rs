@@ -1,36 +1,40 @@
 //! Try to translate each Pico-8 file and report the ones that do not parse.
 use pico8_to_lua::patch_lua;
 use std::collections::HashSet;
-use std::fmt::Write;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub(crate) fn execute(recurse: bool, quiet: bool, files: &[PathBuf]) -> (ExitCode, String) {
+pub(crate) fn execute<W: Write>(
+    out: &mut W,
+    recurse: bool,
+    quiet: bool,
+    files: &[PathBuf],
+) -> io::Result<ExitCode> {
     let mut failed = 0usize;
     let mut checked = 0usize;
     let mut seen_dirs = HashSet::new();
-    let mut report = String::new();
     for path in files {
         visit(
+            out,
             path,
             recurse,
             quiet,
             &mut seen_dirs,
             &mut failed,
             &mut checked,
-            &mut report,
-        );
+        )?;
     }
 
     if failed == 0 {
         if !quiet {
-            let _ = writeln!(report, "{} {} ok", checked, files_word(checked));
+            writeln!(out, "{} {} ok", checked, files_word(checked))?;
         }
-        (ExitCode::SUCCESS, report)
+        Ok(ExitCode::SUCCESS)
     } else {
-        let _ = writeln!(report, "{failed} of {checked} failed");
-        (ExitCode::from(1), report)
+        writeln!(out, "{failed} of {checked} failed")?;
+        Ok(ExitCode::from(1))
     }
 }
 
@@ -38,38 +42,37 @@ fn files_word(n: usize) -> &'static str {
     if n == 1 { "file" } else { "files" }
 }
 
-fn visit(
+fn visit<W: Write>(
+    out: &mut W,
     path: &Path,
     recurse: bool,
     quiet: bool,
     seen_dirs: &mut HashSet<PathBuf>,
     failed: &mut usize,
     checked: &mut usize,
-    report: &mut String,
-) {
+) -> io::Result<()> {
     let meta = match fs::metadata(path) {
         Ok(meta) => meta,
         Err(err) => {
             *checked += 1;
             *failed += 1;
-            let _ = writeln!(report, "FAIL {}\n{err}", path.display());
-            return;
+            return writeln!(out, "FAIL {}\n{err}", path.display());
         }
     };
     if meta.is_dir() {
         if !recurse {
             if !quiet {
-                let _ = writeln!(
-                    report,
+                writeln!(
+                    out,
                     "WARN {}: directory (pass -r to recurse)",
                     path.display()
-                );
+                )?;
             }
-            return;
+            return Ok(());
         }
         if let Ok(canonical) = fs::canonicalize(path) {
             if !seen_dirs.insert(canonical) {
-                return;
+                return Ok(());
             }
         }
         let entries = match fs::read_dir(path) {
@@ -84,40 +87,40 @@ fn visit(
             Err(err) => {
                 *checked += 1;
                 *failed += 1;
-                let _ = writeln!(report, "FAIL {}\n{err}", path.display());
-                return;
+                return writeln!(out, "FAIL {}\n{err}", path.display());
             }
         };
         children.sort();
         for child in children {
-            visit(&child, true, quiet, seen_dirs, failed, checked, report);
+            visit(out, &child, true, quiet, seen_dirs, failed, checked)?;
         }
-        return;
+        return Ok(());
     }
     if !is_source(path) {
         if !quiet {
-            let _ = writeln!(report, "IGNORE {}", path.display());
+            writeln!(out, "IGNORE {}", path.display())?;
         }
-        return;
+        return Ok(());
     }
     match translate(path) {
         Translated::Ok => {
             *checked += 1;
             if !quiet {
-                let _ = writeln!(report, "ok {}", path.display());
+                writeln!(out, "ok {}", path.display())?;
             }
         }
         Translated::Warn(message) => {
             if !quiet {
-                let _ = writeln!(report, "WARN {}: {message}", path.display());
+                writeln!(out, "WARN {}: {message}", path.display())?;
             }
         }
         Translated::Fail(err) => {
             *checked += 1;
             *failed += 1;
-            let _ = writeln!(report, "FAIL {}\n{err}", path.display());
+            writeln!(out, "FAIL {}\n{err}", path.display())?;
         }
     }
+    Ok(())
 }
 
 fn is_source(path: &Path) -> bool {
@@ -198,12 +201,13 @@ mod tests {
     }
 
     fn run_with(recurse: bool, quiet: bool, files: &[PathBuf]) -> (u8, String) {
-        let (code, report) = execute(recurse, quiet, files);
+        let mut report = Vec::new();
+        let code = execute(&mut report, recurse, quiet, files).unwrap();
         let code = match code {
             ExitCode::SUCCESS => 0,
             _ => 1,
         };
-        (code, report)
+        (code, String::from_utf8(report).unwrap())
     }
 
     #[test]

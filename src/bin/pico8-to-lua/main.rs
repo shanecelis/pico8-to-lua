@@ -33,11 +33,13 @@ fn main() -> ExitCode {
             quiet,
             recurse,
             files,
-        }) => {
-            let (code, report) = check::execute(recurse, quiet, &files);
-            print!("{report}");
-            code
-        }
+        }) => match check::execute(&mut io::stdout(), recurse, quiet, &files) {
+            Ok(code) => code,
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::from(1)
+            }
+        },
         Err(err) => {
             eprintln!("{err}");
             ExitCode::from(err.code())

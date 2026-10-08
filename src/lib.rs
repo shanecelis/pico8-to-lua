@@ -47,7 +47,7 @@ pub fn try_patch_includes<'h, E: Error>(
             }
         }
     }
-    let patched = Cow::Owned(splice(lua.as_ref(), &edits));
+    let patched = Cow::Owned(splice(lua.as_ref(), edits.into_iter()));
     match error {
         Some(err) => Err(err),
         None => Ok(patched),
@@ -87,20 +87,21 @@ where
                 include.end,
                 resolve(include.path).into_owned(),
             )
-        })
-        .collect::<Vec<_>>();
-    Cow::Owned(splice(lua.as_ref(), &edits))
+        });
+    Cow::Owned(splice(lua.as_ref(), edits))
 }
 
-fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
-    let mut out = String::with_capacity(src.len());
+fn splice(src: &str, edits: impl Iterator<Item = (usize, usize, String)>) -> String {
+    let capacity = src.len();
+    let mut out = String::with_capacity(capacity);
     let mut last = 0;
     for (start, end, replacement) in edits {
-        out.push_str(&src[last..*start]);
-        out.push_str(replacement);
-        last = *end;
+        out.push_str(&src[last..start]);
+        out.push_str(&replacement);
+        last = end;
     }
     out.push_str(&src[last..]);
+    assert!(capacity >= out.len());
     out
 }
 
