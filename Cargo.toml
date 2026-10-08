@@ -16,18 +16,14 @@ license = "Zlib"
 repository = "https://github.com/shanecelis/pico8-to-lua"
 
 [dependencies]
+lexopt = "0.3"
 pest = "2.8"
 pest_derive = "2.8"
 
 [dev-dependencies]
-clap = { version = "4.5", features = ["derive"] }
 criterion = "0.8.2"
 test-case = "3.4.0"
 version-sync = "0.9.5"
-
-[[example]]
-name = "check"
-test = true
 
 [[bench]]
 name = "patch_lua"

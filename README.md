@@ -1,6 +1,6 @@
 # pico8-to-lua
 
-A library and command line tool to convert Pico-8's dialect of Lua to plain Lua. 
+A library and command line tool to convert Pico-8's Lua dialect into plain Lua. 
 
 ## Installation
 
@@ -21,14 +21,29 @@ cargo install pico8-to-lua
 ### Patch a cart
 
 ``` sh
-pico8-to-lua cart.p8 > patched-cart.p8
+pico8-to-lua convert cart.p8 > patched-cart.p8
 ```
+
+Print only the Lua section:
+
+``` sh
+pico8-to-lua convert --lua-only cart.p8
+```
+
+Omitting `convert` is the same command, so `pico8-to-lua cart.p8` and `pico8-to-lua --lua-only cart.p8` work too.
 
 ### Patch stdin
 
 ``` sh
-echo "if (true) x+= 1" | pico8-to-lua -
+echo "if (true) x+= 1" | pico8-to-lua convert -
 if true then x = x + (1) end
+```
+
+### Check carts
+
+``` sh
+pico8-to-lua check a.p8 b.p8
+pico8-to-lua check -qr carts/
 ```
 
 ### Patch the Code

@@ -1,11 +1,4 @@
 //! Try to translate each Pico-8 file and report the ones that do not parse.
-//!
-//! ```sh
-//! cargo run --example check a.p8 b.p8
-//! cargo run --example check -r carts/
-//! cargo run --example check -q -r carts/
-//! ```
-use clap::Parser;
 use pico8_to_lua::patch_lua;
 use std::collections::HashSet;
 use std::fmt::Write;
@@ -13,30 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-#[derive(Debug, Parser)]
-#[command(about = "Try to translate Pico-8 files and report the ones that do not parse")]
-struct Args {
-    /// Recurse into directories.
-    #[arg(short, long)]
-    recurse: bool,
-
-    /// Print failures only.
-    #[arg(short, long)]
-    quiet: bool,
-
-    /// Files and directories to check.
-    #[arg(required = true)]
-    files: Vec<PathBuf>,
-}
-
-fn main() -> ExitCode {
-    let args = Args::parse();
-    let (code, report) = execute(args.recurse, args.quiet, &args.files);
-    print!("{report}");
-    code
-}
-
-fn execute(recurse: bool, quiet: bool, files: &[PathBuf]) -> (ExitCode, String) {
+pub(crate) fn execute(recurse: bool, quiet: bool, files: &[PathBuf]) -> (ExitCode, String) {
     let mut failed = 0usize;
     let mut checked = 0usize;
     let mut seen_dirs = HashSet::new();
@@ -266,30 +236,6 @@ mod tests {
         let (code, report) = run(false, &[lua]);
         assert_eq!(code, 0, "{report}");
         assert!(report.contains("1 file ok"), "{report}");
-    }
-
-    #[test]
-    fn no_args_prints_usage() {
-        let err = Args::try_parse_from(["check"]).unwrap_err();
-        assert_eq!(err.exit_code(), 2);
-        let message = err.to_string();
-        assert!(message.contains("Usage:"), "{message}");
-    }
-
-    #[test]
-    fn recurse_flag() {
-        let args = Args::try_parse_from(["check", "-r", "carts"]).unwrap();
-        assert!(args.recurse);
-        assert!(!args.quiet);
-        assert_eq!(args.files, vec![PathBuf::from("carts")]);
-    }
-
-    #[test]
-    fn quiet_flag() {
-        let args = Args::try_parse_from(["check", "-q", "a.p8"]).unwrap();
-        assert!(args.quiet);
-        assert!(!args.recurse);
-        assert_eq!(args.files, vec![PathBuf::from("a.p8")]);
     }
 
     #[test]
