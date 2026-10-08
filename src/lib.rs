@@ -47,7 +47,7 @@ pub fn try_patch_includes<'h, E: Error>(
             }
         }
     }
-    let patched = Cow::Owned(splice(lua.as_ref(), edits.into_iter()));
+    let patched = Cow::Owned(splice(lua.as_ref(), &edits));
     match error {
         Some(err) => Err(err),
         None => Ok(patched),
@@ -79,7 +79,7 @@ where
     if includes.is_empty() {
         return lua;
     }
-    let edits = includes
+    let edits: Vec<_> = includes
         .iter()
         .map(|include| {
             (
@@ -87,21 +87,28 @@ where
                 include.end,
                 resolve(include.path).into_owned(),
             )
-        });
-    Cow::Owned(splice(lua.as_ref(), edits))
+        }).collect();
+    Cow::Owned(splice(lua.as_ref(), &edits))
 }
 
-fn splice(src: &str, edits: impl Iterator<Item = (usize, usize, String)>) -> String {
-    let capacity = src.len();
-    let mut out = String::with_capacity(capacity);
+fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
+    // let capacity = src.len();
+    let mut capacity = 0;
     let mut last = 0;
     for (start, end, replacement) in edits {
-        out.push_str(&src[last..start]);
-        out.push_str(&replacement);
-        last = end;
+        capacity += start - last + replacement.len();
+        last = *end;
+    }
+    capacity += src.len() - last;
+    let mut out = String::with_capacity(capacity);
+    last = 0;
+    for (start, end, replacement) in edits {
+        out.push_str(&src[last..*start]);
+        out.push_str(replacement);
+        last = *end;
     }
     out.push_str(&src[last..]);
-    assert!(capacity >= out.len());
+    // assert!(capacity >= out.len());
     out
 }
 
@@ -675,6 +682,38 @@ local key = keys[i]
     #[test]
     fn test_parser_binary_fraction_longer_than_a_nibble() {
         assert_eq!(parse::try_patch("a = 0b0.00001").unwrap(), "a = 0x0.08");
+    }
+
+    /// Ensure our capcity calculation is correct.
+    fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
+        let out = super::splice(src, edits);
+        assert_eq!(out.capacity(), out.len());
+        out
+    }
+
+    #[test]
+    fn splice_with_no_edits_returns_the_source() {
+        assert_eq!(splice("abc", &[]), "abc");
+    }
+
+    #[test]
+    fn splice_keeps_the_tail_after_the_last_edit() {
+        let edits = vec![(1, 2, "XY".to_string())];
+        assert_eq!(splice("abcdef", &edits), "aXYcdef");
+    }
+
+    #[test]
+    fn splice_keeps_the_gap_and_the_tail() {
+        let edits = vec![(0, 3, "1".to_string()), (4, 7, "2".to_string())];
+        assert_eq!(splice("one two three", &edits), "1 2 three");
+    }
+
+    #[test]
+    fn patch_includes_keeps_the_code_after_the_directive() {
+        assert_eq!(
+            patch_includes("#include a.p8\nx = 1\n", |path| format!("-- {path}").into()),
+            "-- a.p8\nx = 1\n"
+        );
     }
 
     #[test]
