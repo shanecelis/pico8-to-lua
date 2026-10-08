@@ -1,6 +1,5 @@
 use pico8_to_lua::*;
 use std::ffi::{OsStr, OsString};
-use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -41,7 +40,7 @@ fn main() -> ExitCode {
         }
         Err(err) => {
             eprintln!("{err}");
-            ExitCode::from(err.code)
+            ExitCode::from(err.code())
         }
     }
 }
@@ -60,31 +59,26 @@ enum Command {
     Help,
 }
 
-#[derive(Debug)]
-struct CliError {
-    message: String,
-    code: u8,
+#[derive(Debug, thiserror::Error)]
+enum CliError {
+    #[error("ERROR: Must provide filename argument\n{USAGE}")]
+    NoArguments,
+    #[error("ERROR: Must provide filename argument")]
+    MissingFilename,
+    #[error("{}", USAGE)]
+    Usage,
+    #[error(transparent)]
+    Argument(#[from] lexopt::Error),
 }
 
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl From<lexopt::Error> for CliError {
-    fn from(err: lexopt::Error) -> Self {
-        CliError {
-            message: err.to_string(),
-            code: 2,
+impl CliError {
+    fn code(&self) -> u8 {
+        match self {
+            CliError::NoArguments => 1,
+            CliError::Usage => 2,
+            CliError::Argument(_) => 3,
+            CliError::MissingFilename => 4,
         }
-    }
-}
-
-fn missing_filename() -> CliError {
-    CliError {
-        message: "ERROR: Must provide filename argument".to_string(),
-        code: 1,
     }
 }
 
@@ -103,7 +97,7 @@ where
 
     let mut parser = lexopt::Parser::from_args(args);
     let leading = match parser.next()? {
-        None => return Err(missing_filename()),
+        None => return Err(CliError::NoArguments),
         Some(Short('h') | Long("help")) => return Ok(Command::Help),
         Some(Value(cmd)) if cmd == "check" => return parse_check(parser),
         Some(Value(cmd)) if cmd == "convert" => None,
@@ -130,10 +124,7 @@ fn parse_check(mut parser: lexopt::Parser) -> Result<Command, CliError> {
         }
     }
     if files.is_empty() {
-        return Err(CliError {
-            message: USAGE.to_string(),
-            code: 2,
-        });
+        return Err(CliError::Usage);
     }
     Ok(Command::Check {
         quiet,
@@ -187,7 +178,7 @@ fn parse_convert(
         }
     }
     let Some(filename) = filename else {
-        return Err(missing_filename());
+        return Err(CliError::MissingFilename);
     };
     Ok(Command::Convert { lua_only, filename })
 }
@@ -259,7 +250,8 @@ mod tests {
     #[test]
     fn no_args_prints_usage() {
         let err = parse(["check"]).unwrap_err();
-        assert_eq!(err.code, 2);
+        assert!(matches!(err, CliError::Usage));
+        assert_eq!(err.code(), 2);
         assert!(err.to_string().contains("Usage:"), "{err}");
     }
 
@@ -366,12 +358,31 @@ mod tests {
     }
 
     #[test]
+    fn no_arguments_shows_usage() {
+        let err = parse(std::iter::empty::<&str>()).unwrap_err();
+        assert!(matches!(err, CliError::NoArguments));
+        assert_eq!(err.code(), 1);
+        let message = err.to_string();
+        assert!(
+            message.starts_with("ERROR: Must provide filename argument\n"),
+            "{message}"
+        );
+        assert!(message.contains("Usage:"), "{message}");
+    }
+
+    #[test]
     fn missing_filename() {
-        for args in [Vec::<&str>::new(), vec!["convert"]] {
-            let err = parse(args).unwrap_err();
-            assert_eq!(err.code, 1);
-            assert_eq!(err.to_string(), "ERROR: Must provide filename argument");
-        }
+        let err = parse(["convert"]).unwrap_err();
+        assert!(matches!(err, CliError::MissingFilename));
+        assert_eq!(err.code(), 4);
+        assert_eq!(err.to_string(), "ERROR: Must provide filename argument");
+    }
+
+    #[test]
+    fn unexpected_argument_exits_separately() {
+        let err = parse(["cart.p8", "extra"]).unwrap_err();
+        assert!(matches!(err, CliError::Argument(_)));
+        assert_eq!(err.code(), 3);
     }
 
     #[test]
