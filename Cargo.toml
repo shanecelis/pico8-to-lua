@@ -16,9 +16,17 @@ license = "Zlib"
 repository = "https://github.com/shanecelis/pico8-to-lua"
 
 [dependencies]
-lexopt = "0.3"
+lexopt = { version = "0.3", optional = true }
 pest = "2.8"
 pest_derive = "2.8"
+
+[features]
+default = ["cli"]
+cli = ["dep:lexopt"]
+
+[[bin]]
+name = "pico8-to-lua"
+required-features = ["cli"]
 
 [dev-dependencies]
 criterion = "0.8.2"

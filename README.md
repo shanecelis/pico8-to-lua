@@ -4,17 +4,19 @@ A library and command line tool to convert Pico-8's Lua dialect into plain Lua.
 
 ## Installation
 
-### As a library
-
-``` sh
-cargo add pico8-to-lua
-```
-
 ### As a command line tool
 
 ``` sh
 cargo install pico8-to-lua
 ```
+
+### As a library
+
+``` sh
+cargo add pico8-to-lua --no-default-features
+```
+
+The `cli` feature is enabled by default, but it's not necessary for the library.
 
 ## Examples
 
