@@ -2,7 +2,7 @@
 use pico8_to_lua::patch_lua;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -11,6 +11,16 @@ pub(crate) fn execute<W: Write>(
     recurse: bool,
     quiet: bool,
     files: &[PathBuf],
+) -> io::Result<ExitCode> {
+    check_paths(out, recurse, quiet, files, &mut io::stdin())
+}
+
+fn check_paths<W: Write, R: Read>(
+    out: &mut W,
+    recurse: bool,
+    quiet: bool,
+    files: &[PathBuf],
+    stdin: &mut R,
 ) -> io::Result<ExitCode> {
     let mut failed = 0usize;
     let mut checked = 0usize;
@@ -24,6 +34,7 @@ pub(crate) fn execute<W: Write>(
             &mut seen_dirs,
             &mut failed,
             &mut checked,
+            stdin,
         )?;
     }
 
@@ -42,7 +53,7 @@ fn files_word(n: usize) -> &'static str {
     if n == 1 { "file" } else { "files" }
 }
 
-fn visit<W: Write>(
+fn visit<W: Write, R: Read>(
     out: &mut W,
     path: &Path,
     recurse: bool,
@@ -50,7 +61,17 @@ fn visit<W: Write>(
     seen_dirs: &mut HashSet<PathBuf>,
     failed: &mut usize,
     checked: &mut usize,
+    stdin: &mut R,
 ) -> io::Result<()> {
+    if path.as_os_str() == "-" {
+        let mut input = String::new();
+        if let Err(err) = stdin.read_to_string(&mut input) {
+            *checked += 1;
+            *failed += 1;
+            return writeln!(out, "FAIL {}\n{err}", path.display());
+        }
+        return report(out, path, quiet, failed, checked, classify(&input));
+    }
     let meta = match fs::metadata(path) {
         Ok(meta) => meta,
         Err(err) => {
@@ -92,7 +113,7 @@ fn visit<W: Write>(
         };
         children.sort();
         for child in children {
-            visit(out, &child, true, quiet, seen_dirs, failed, checked)?;
+            visit(out, &child, true, quiet, seen_dirs, failed, checked, stdin)?;
         }
         return Ok(());
     }
@@ -102,7 +123,18 @@ fn visit<W: Write>(
         }
         return Ok(());
     }
-    match translate(path) {
+    report(out, path, quiet, failed, checked, translate(path))
+}
+
+fn report<W: Write>(
+    out: &mut W,
+    path: &Path,
+    quiet: bool,
+    failed: &mut usize,
+    checked: &mut usize,
+    translated: Translated,
+) -> io::Result<()> {
+    match translated {
         Translated::Ok => {
             *checked += 1;
             if !quiet {
@@ -141,7 +173,11 @@ fn translate(path: &Path) -> Translated {
         Ok(input) => input,
         Err(err) => return Translated::Fail(err.to_string()),
     };
-    let src = match lua_source(&input) {
+    classify(&input)
+}
+
+fn classify(input: &str) -> Translated {
+    let src = match lua_source(input) {
         Ok(src) => src,
         Err(message) => return Translated::Warn(message),
     };
@@ -356,6 +392,47 @@ mod tests {
         assert!(!report.contains("IGNORE"), "{report}");
         assert!(!report.contains("WARN"), "{report}");
         assert!(report.contains("1 of 2 failed"), "{report}");
+    }
+
+    fn run_stdin(quiet: bool, input: &str) -> (u8, String) {
+        let mut report = Vec::new();
+        let mut stdin = io::Cursor::new(input);
+        let code =
+            check_paths(&mut report, false, quiet, &[PathBuf::from("-")], &mut stdin).unwrap();
+        let code = match code {
+            ExitCode::SUCCESS => 0,
+            _ => 1,
+        };
+        (code, String::from_utf8(report).unwrap())
+    }
+
+    #[test]
+    fn dash_reads_stdin() {
+        let (code, report) = run_stdin(false, "x += 1\n");
+        assert_eq!(code, 0, "{report}");
+        assert!(report.contains("ok -\n"), "{report}");
+        assert!(report.contains("1 file ok"), "{report}");
+    }
+
+    #[test]
+    fn dash_reports_a_parse_failure() {
+        let (code, report) = run_stdin(false, "@@\n");
+        assert_eq!(code, 1, "{report}");
+        assert!(report.contains("FAIL -\n1:1\n"), "{report}");
+        assert!(report.contains("@@"), "{report}");
+        assert!(report.contains("1 of 1 failed"), "{report}");
+    }
+
+    #[test]
+    fn dash_warns_when_stdin_cart_has_no_lua() {
+        let (code, report) = run_stdin(
+            false,
+            "pico-8 cartridge // http://www.pico-8.com\nversion 43\n__gfx__\n00\n",
+        );
+        assert_eq!(code, 0, "{report}");
+        assert!(report.contains("WARN -: no __lua__ section"), "{report}");
+        assert!(!report.contains("FAIL"), "{report}");
+        assert!(report.contains("0 files ok"), "{report}");
     }
 
     #[test]

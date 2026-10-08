@@ -15,7 +15,7 @@ Convert Pico-8 Lua to plain Lua, or check that files parse.
 
   convert        Rewrite a file. The word may be omitted.
   --lua-only     Print only the Lua section of a cart.
-  check          Report files that do not parse.
+  check          Report files that do not parse. `-` reads stdin.
   -q, --quiet    Print failures only.
   -r, --recurse  Recurse into directories.
   -h, --help     Print this help.";

@@ -46,6 +46,7 @@ if true then x = x + (1) end
 ``` sh
 pico8-to-lua check a.p8 b.p8
 pico8-to-lua check -qr carts/
+echo "if (true) x+= 1" | pico8-to-lua check -
 ```
 
 ### Patch the Code

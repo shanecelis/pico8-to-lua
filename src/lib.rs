@@ -87,7 +87,8 @@ where
                 include.end,
                 resolve(include.path).into_owned(),
             )
-        }).collect();
+        })
+        .collect();
     Cow::Owned(splice(lua.as_ref(), &edits))
 }
 
