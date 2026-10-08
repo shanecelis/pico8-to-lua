@@ -11,26 +11,11 @@
 /// [here](https://github.com/benwiley4000/pico8-to-lua/blob/master/pico8-to-lua.lua).
 ///
 /// Licensed under the Zlib license.
-#[cfg(feature = "regex")]
-use find_matching_bracket::find_matching_paren;
-#[cfg(feature = "regex")]
-use lazy_regex::regex;
-#[cfg(feature = "regex")]
-use regex::{Regex, Replacer};
 use std::{borrow::Cow, error::Error};
 
 mod parse;
 
 pub use parse::ParseError;
-
-// https://stackoverflow.com/a/79268946/6454690
-#[cfg(feature = "regex")]
-fn replace_all_in_place<R: Replacer>(regex: &Regex, s: &mut Cow<'_, str>, replacer: R) {
-    let new = regex.replace_all(s, replacer);
-    if let Cow::Owned(o) = new {
-        *s = Cow::Owned(o);
-    } // Otherwise, no change was made.
-}
 
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
 ///
@@ -150,120 +135,6 @@ pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, Parse
         Cow::Borrowed(_) => Ok(lua),
         Cow::Owned(patched) => Ok(Cow::Owned(patched)),
     }
-}
-
-#[cfg(feature = "regex")]
-fn patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
-    let mut lua = lua.into();
-    // Replace != with ~=.
-    replace_all_in_place(regex!(r"!="), &mut lua, "~=");
-
-    // Replace // with --.
-    replace_all_in_place(regex!(r"//"), &mut lua, "--");
-
-    // Replace unicode symbols for buttons.
-    // Stop at the call's own ')'. `\S+` would swallow it when the call is
-    // wrapped, as in `if (btn(❎))`, and the glyph would be written back.
-    replace_all_in_place(
-        regex!(r"(btnp?)\(\s*([^)]+?)\s*\)"),
-        &mut lua,
-        |caps: &regex::Captures| {
-            let func = &caps[1];
-            let symbol = caps[2].trim().trim_end_matches('️');
-            let sub = match symbol {
-                "⬅" => "0",
-                "➡" => "1",
-                "⬆" => "2",
-                "⬇" => "3",
-                "🅾" => "4",
-                "❎" => "5",
-                x => x,
-            };
-            format!("{func}({sub})")
-        },
-    );
-
-    // Rewrite shorthand if statements.
-    //
-    // This is why using regex is not a great tool for parsing but because we
-    // only need to match one line, we find the matching parenthesis and move on.
-    replace_all_in_place(
-        regex!(r"(?m)^(\s*)if\s*(\([^\n]*)$"),
-        &mut lua,
-        |caps: &regex::Captures| {
-            let prefix = &caps[1];
-            let line = &caps[2];
-
-            if regex!(r"\bthen\b").is_match(line) {
-                return caps[0].to_string();
-            }
-            if let Some(index) = find_matching_paren(line, 0) {
-                let cond = &line[1..index];
-                let body = &line[index + 1..].trim_start();
-                let comment_start = body.find("--");
-                if let Some(cs) = comment_start {
-                    let (code, comment) = body.split_at(cs);
-                    format!(
-                        "{}if {} then {} end {}",
-                        prefix,
-                        cond,
-                        code.trim_end(),
-                        comment
-                    )
-                } else {
-                    format!("{}if {} then {} end", prefix, cond, body)
-                }
-            } else {
-                caps[0].to_string()
-            }
-        },
-    );
-
-    // Rewrite assignment operators (+=, -=, etc.).
-    replace_all_in_place(
-        regex!(r"(?m)([^-\s]\S*)\s*([+\-*/%])=\s*([^\n\r]+?)(\s*(\breturn|\bend|\belse|;|--|$))"),
-        &mut lua,
-        "$1 = $1 $2 ($3)$4",
-    );
-
-    // Replace "?expr" with "print(expr)".
-    replace_all_in_place(regex!(r"(?m)^(\s*)\?([^\n\r]+)"), &mut lua, "${1}print($2)");
-
-    // Convert binary literals to hex literals.
-    replace_all_in_place(
-        regex!(r"([^[:alnum:]_])0[bB]([01.]+)"),
-        &mut lua,
-        |caps: &regex::Captures| {
-            let prefix = &caps[1];
-            let bin = &caps[2];
-            let mut parts = bin.split('.');
-
-            let p1 = parts.next().unwrap_or("");
-            let p2 = parts.next().unwrap_or("");
-
-            let int_val = u64::from_str_radix(p1, 2).ok();
-            let frac_val = if !p2.is_empty() {
-                let padded = format!("{:0<4}", p2);
-                u64::from_str_radix(&padded, 2).ok()
-            } else {
-                None
-            };
-
-            match (int_val, frac_val) {
-                (Some(i), Some(f)) => format!("{}0x{:x}.{:x}", prefix, i, f),
-                (Some(i), None) => format!("{}0x{:x}", prefix, i),
-                _ => caps[0].to_string(),
-            }
-        },
-    );
-    lua
-}
-
-/// Regex rewriter, exported so the benchmark can time it against [`patch_lua`].
-#[cfg(feature = "regex")]
-#[doc(hidden)]
-pub fn bench_patch_lua_regex<'h>(lua: impl Into<Cow<'h, str>>) -> Cow<'h, str> {
-    patch_lua_regex(lua)
 }
 
 /// Whether the pest grammar accepts `src`. The benchmark uses this so a parse
