@@ -29,7 +29,9 @@ pico8-to-lua convert cart.p8 > patched-cart.p8
 Print only the Lua section:
 
 ``` sh
-pico8-to-lua convert --lua-only cart.p8
+# cart.p8's Lua is: if (true) x += 1
+$ pico8-to-lua convert --lua-only cart.p8
+if true then x = x + (1) end
 ```
 
 Omitting `convert` is the same command, so `pico8-to-lua cart.p8` and `pico8-to-lua --lua-only cart.p8` work too.
@@ -37,16 +39,44 @@ Omitting `convert` is the same command, so `pico8-to-lua cart.p8` and `pico8-to-
 ### Patch stdin
 
 ``` sh
-echo "if (true) x+= 1" | pico8-to-lua convert -
+$ echo "if (true) x+= 1" | pico8-to-lua convert -
 if true then x = x + (1) end
 ```
 
 ### Check carts
 
 ``` sh
-pico8-to-lua check a.p8 b.p8
-pico8-to-lua check -qr carts/
-echo "if (true) x+= 1" | pico8-to-lua check -
+$ pico8-to-lua check a.p8 b.p8
+ok a.p8
+ok b.p8
+2 files ok
+```
+
+`-q` prints failures only:
+
+``` sh
+$ pico8-to-lua check -q bad.lua
+FAIL bad.lua
+1:1
+ --> 1:1
+  |
+1 | @@
+  | ^---
+  |
+  = expected chunk
+1 of 1 failed
+```
+
+``` sh
+$ echo "if (true) x+= 1" | pico8-to-lua check -
+ok -
+1 file ok
+```
+
+Recurse with `-r`:
+
+``` sh
+pico8-to-lua check -r carts/
 ```
 
 ### Patch the Code
