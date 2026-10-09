@@ -135,10 +135,13 @@ fn collect<'a>(pair: pest::iterators::Pair<'a, Rule>, src: &'a str, edits: &mut 
 
     // Only the rewrites that read child spans keep the children. Every other
     // node is walked without allocating a child list.
+    let call_shift = rule == Rule::shift_expr
+        && (text.contains(">>>") || text.contains("<<>") || text.contains(">><"));
     if matches!(
         rule,
-        Rule::compound_assign | Rule::shorthand_if | Rule::shorthand_while
-    ) {
+        Rule::compound_assign | Rule::shorthand_if | Rule::shorthand_while | Rule::peek
+    ) || call_shift
+    {
         let children: Vec<_> = pair.into_inner().collect();
         for child in &children {
             collect(child.clone(), src, edits);
@@ -153,13 +156,30 @@ fn collect<'a>(pair: pest::iterators::Pair<'a, Rule>, src: &'a str, edits: &mut 
                     let ve = code_end(src, vs, ve);
                     let ee = code_end(src, es, ee);
                     let end = code_end(src, start, end);
-                    let bin = &op[..op.len() - 1];
                     let var_txt = materialize(src, vs, ve, edits);
                     let exp_txt = materialize(src, es, ee, edits);
                     edits.push(Edit {
                         start,
                         end,
-                        replacement: Cow::Owned(format!("{var_txt} = {var_txt} {bin} ({exp_txt})")),
+                        replacement: Cow::Owned(compound_replacement(&var_txt, op, &exp_txt)),
+                    });
+                }
+            }
+            Rule::peek => {
+                if let Some(repl) = peek_replacement(src, &children, edits) {
+                    edits.push(Edit {
+                        start,
+                        end: code_end(src, start, end),
+                        replacement: Cow::Owned(repl),
+                    });
+                }
+            }
+            Rule::shift_expr => {
+                if let Some(repl) = shift_replacement(src, &children, edits) {
+                    edits.push(Edit {
+                        start,
+                        end: code_end(src, start, end),
+                        replacement: Cow::Owned(repl),
                     });
                 }
             }
@@ -215,6 +235,20 @@ fn collect<'a>(pair: pest::iterators::Pair<'a, Rule>, src: &'a str, edits: &mut 
                 replacement: Cow::Borrowed("~="),
             });
         }
+        Rule::xor_op if text == "^^" => {
+            edits.push(Edit {
+                start,
+                end,
+                replacement: Cow::Borrowed("~"),
+            });
+        }
+        Rule::mul_op if text == "\\" => {
+            edits.push(Edit {
+                start,
+                end,
+                replacement: Cow::Borrowed("//"),
+            });
+        }
         Rule::binary => {
             edits.push(Edit {
                 start,
@@ -230,6 +264,82 @@ fn collect<'a>(pair: pest::iterators::Pair<'a, Rule>, src: &'a str, edits: &mut 
             });
         }
         _ => {}
+    }
+}
+
+/// `var \= exp` and the other Pico-8 assignment operators, in Lua.
+fn compound_replacement(var_txt: &str, op: &str, exp_txt: &str) -> String {
+    let bin = &op[..op.len() - 1];
+    match bin {
+        "\\" => format!("{var_txt} = {var_txt} // ({exp_txt})"),
+        "^^" => format!("{var_txt} = {var_txt} ~ ({exp_txt})"),
+        ">>>" => format!("{var_txt} = lshr({var_txt}, ({exp_txt}))"),
+        "<<>" => format!("{var_txt} = rotl({var_txt}, ({exp_txt}))"),
+        ">><" => format!("{var_txt} = rotr({var_txt}, ({exp_txt}))"),
+        _ => format!("{var_txt} = {var_txt} {bin} ({exp_txt})"),
+    }
+}
+
+fn peek_replacement(
+    src: &str,
+    children: &[pest::iterators::Pair<'_, Rule>],
+    edits: &[Edit<'_>],
+) -> Option<String> {
+    let op = child_str(children, Rule::peek_op)?;
+    let (start, end) = child_span(children, Rule::peek_operand)?;
+    let arg = materialize(src, start, code_end(src, start, end), edits);
+    let name = match op {
+        "@" => "peek",
+        "%" => "peek2",
+        "$" => "peek4",
+        _ => return None,
+    };
+    Some(format!("{name}({arg})"))
+}
+
+/// `>>>` `<<>` `>><` become calls. `<<` and `>>` stay, including beside a call:
+/// `a >>> b << c` is `lshr(a, b) << c`.
+fn shift_replacement(
+    src: &str,
+    children: &[pest::iterators::Pair<'_, Rule>],
+    edits: &[Edit<'_>],
+) -> Option<String> {
+    let atom = children.iter().find(|c| c.as_rule() == Rule::shift_atom)?;
+    let mut acc: Option<String> = None;
+    let mut prev_end = atom.as_span().end();
+    let expr_start = atom.as_span().start();
+
+    for step in children.iter().filter(|c| c.as_rule() == Rule::shift_step) {
+        let inner: Vec<_> = step.clone().into_inner().collect();
+        let op = child_str(&inner, Rule::shift_op)?;
+        let (right_start, right_end) = child_span(&inner, Rule::shift_atom)?;
+        let right_end = code_end(src, right_start, right_end);
+        let right_txt = materialize(src, right_start, right_end, edits);
+        let op_pair = inner.iter().find(|c| c.as_rule() == Rule::shift_op)?;
+        let op_start = op_pair.as_span().start();
+        let op_end = op_pair.as_span().end();
+        if let Some(func) = shift_func(op) {
+            let left_txt = match &acc {
+                Some(left) => left.clone(),
+                None => materialize(src, expr_start, code_end(src, expr_start, prev_end), edits),
+            };
+            acc = Some(format!("{func}({left_txt}, {right_txt})"));
+        } else if let Some(left) = acc.as_deref() {
+            let before_op = &src[prev_end..op_start];
+            let after_op = &src[op_end..right_start];
+            acc = Some(format!("{left}{before_op}{op}{after_op}{right_txt}"));
+        }
+        prev_end = step.as_span().end();
+    }
+    acc
+}
+
+fn shift_func(op: &str) -> Option<&'static str> {
+    match op {
+        ">>>" => Some("lshr"),
+        "<<>" => Some("rotl"),
+        ">><" => Some("rotr"),
+        _ => None,
     }
 }
 

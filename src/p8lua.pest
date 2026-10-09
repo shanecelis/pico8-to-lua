@@ -168,9 +168,14 @@ and_expr = _{ cmp_expr ~ (hws* ~ k_and ~ hws* ~ cmp_expr)* }
 cmp_expr = _{ bitor_expr ~ (hws* ~ cmp_op ~ hws* ~ bitor_expr)* }
 cmp_op = @{ "==" | "~=" | "!=" | "<=" | ">=" | "<" | ">" }
 bitor_expr = _{ bitxor_expr ~ (hws* ~ "|" ~ hws* ~ bitxor_expr)* }
-bitxor_expr = _{ bitand_expr ~ (hws* ~ "^^" ~ hws* ~ bitand_expr)* }
+bitxor_expr = _{ bitand_expr ~ (hws* ~ xor_op ~ hws* ~ bitand_expr)* }
+xor_op = @{ "^^" | "~" ~ !"=" }
 bitand_expr = _{ shift_expr ~ (hws* ~ "&" ~ hws* ~ shift_expr)* }
-shift_expr = _{ concat_expr ~ (hws* ~ shift_op ~ hws* ~ concat_expr)* }
+// `<<` and `>>` are already Lua. The other three become calls, so the chain
+// stays visible and left-associative: `a >>> b << c` is `lshr(a, b) << c`.
+shift_expr = { shift_atom ~ shift_step* }
+shift_atom = { concat_expr }
+shift_step = { shift_op ~ shift_atom }
 shift_op = @{ "<<>" | ">><" | ">>>" | "<<" | ">>" }
 concat_expr = _{ add_expr ~ (hws* ~ ".." ~ !"." ~ hws* ~ concat_expr)? }
 add_expr = _{ mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
@@ -179,8 +184,12 @@ add_expr = _{ mul_expr ~ (hws* ~ add_op ~ hws* ~ mul_expr)* }
 add_op = @{ "+" ~ !"=" | "-" ~ !"-" ~ !"=" }
 mul_expr = _{ unary ~ (hws* ~ mul_op ~ hws* ~ unary)* }
 mul_op = @{ "*" ~ !"=" | "/" ~ !"/" ~ !"=" | "%" ~ !"=" | "\\" ~ !"=" }
-unary = _{ (unary_op ~ hws* ~ unary) | pow_expr }
+unary = _{ (unary_op ~ hws* ~ unary) | peek | pow_expr }
 unary_op = @{ k_not | "#" | "-" ~ !"-" ~ !"=" | "~" ~ !"=" }
+// `%` here is peek2. Binary `%` stays modulo; it is a `mul_op`, not a prefix.
+peek = { peek_op ~ hws* ~ peek_operand }
+peek_op = @{ "@" | "%" | "$" }
+peek_operand = { unary }
 pow_expr = _{ primary ~ (hws* ~ "^" ~ !"=" ~ hws* ~ unary)? }
 
 // A lone Shift-glyph is a number, so it is tried before names. `♥.x` still

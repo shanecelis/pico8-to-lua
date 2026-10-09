@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.1.1")]
+#![doc(html_root_url = "https://docs.rs/pico8-to-lua/0.2.0")]
 #![doc = include_str!("../README.md")]
 /// Copyright (c) 2015 Jez Kabanov <thesleepless@gmail.com>
 /// Modified (c) 2019 Ben Wiley <therealbenwiley@gmail.com>
@@ -685,7 +685,7 @@ local key = keys[i]
         assert_eq!(parse::try_patch("a = 0b0.00001").unwrap(), "a = 0x0.08");
     }
 
-    /// README rows that are not rewritten yet.
+    /// Pico-8 operators that are not already Lua.
     #[test_case(r"a = b \ c", "a = b // c" ; "floor division")]
     #[test_case("a = b ^^ c", "a = b ~ c" ; "xor")]
     #[test_case("a = b >>> c", "a = lshr(b, c)" ; "logical shift right")]
@@ -695,7 +695,14 @@ local key = keys[i]
     #[test_case("a = %b", "a = peek2(b)" ; "peek2")]
     #[test_case("a = $b", "a = peek4(b)" ; "peek4")]
     #[test_case("a = b ~ c", "a = b ~ c" ; "binary xor")]
-    fn unimplemented_dialect(src: &str, expected: &str) {
+    #[test_case(r"a \= b", "a = a // (b)" ; "floor division assign")]
+    #[test_case("a ^^= b", "a = a ~ (b)" ; "xor assign")]
+    #[test_case("a >>>= b", "a = lshr(a, (b))" ; "logical shift assign")]
+    #[test_case("x = a ~= b", "x = a ~= b" ; "not equal stays")]
+    #[test_case("a = ~b", "a = ~b" ; "bitwise not stays")]
+    #[test_case("a = b % c", "a = b % c" ; "modulo stays")]
+    #[test_case("a = b << c", "a = b << c" ; "shift stays")]
+    fn dialect_operators(src: &str, expected: &str) {
         assert_eq!(ok(src), expected);
     }
 

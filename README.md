@@ -130,16 +130,16 @@ because the includes may need patching as well.
 | "⬅ ➡ ⬆ ⬇ 🅾 ❎" | "⬅ ➡ ⬆ ⬇ 🅾 ❎" | yes |
 | fillp glyphs (`█` is `0.5`) | that pattern number | yes |
 | `#include path` | whatever `patch_includes` returns | yes |
-| `a \ b` | `a // b` | not yet |
-| `a ^^ b` | `a ~ b` | not yet |
-| `a >>> b` | `lshr(a, b)` | not yet |
-| `a <<> b` | `rotl(a, b)` | not yet |
-| `a >>< b` | `rotr(a, b)` | not yet |
-| `@a` | `peek(a)` | not yet |
-| `%a` | `peek2(a)` | not yet |
-| `$a` | `peek4(a)` | not yet |
+| `a \ b` | `a // b` | yes |
+| `a ^^ b` | `a ~ b` | yes |
+| `a >>> b` | `lshr(a, b)` | yes |
+| `a <<> b` | `rotl(a, b)` | yes |
+| `a >>< b` | `rotr(a, b)` | yes |
+| `@a` | `peek(a)` | yes |
+| `%a` | `peek2(a)` | yes |
+| `$a` | `peek4(a)` | yes |
 
-Compound assignment is expanded even when the operator is not. `a \= b` becomes `a = a \ (b)`. `a ~ b` is xor, which Lua already spells that way, but this parser rejects it.
+Compound assignment uses those same operators. `a \= b` becomes `a = a // (b)`, and `a >>>= b` becomes `a = lshr(a, (b))`. Binary `a ~ b` is already Lua, so it is left as written.
 
 `//`, `!=`, and glyphs inside a string stay as written. A glyph used as a name, such as `♥.x`, stays a name. `#include` is only recognized at the start of a line, and only `patch_includes` replaces it.
 
