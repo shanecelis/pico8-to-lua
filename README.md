@@ -107,10 +107,41 @@ assert_eq!(patch_includes("#include file.p8", comment_it), "-- INCLUDE 'file.p8'
 It's recommended to patch the includes before patching the code in practice
 because the includes may need patching as well.
 
-## Omissions
+## Transformations
 
-This handles most of the Pico-8 dialect. However, it does not handle the
-rotation operators: '>><' and '<<>'.
+`patch_lua` rewrites the dialect below. `&`, `|`, unary `~`, `<<`, and `>>` are already Lua, so they are copied through.
+
+| Pico-8 | Lua | Done |
+| --- | --- | --- |
+| `a != b` | `a ~= b` | yes |
+| `// comment` | `-- comment` | yes |
+| `if (cond) stmt` | `if cond then stmt end` | yes |
+| `if (cond) stmt else alt` | `if cond then stmt else alt end` | yes |
+| `while (cond) stmt` | `while cond do stmt end` | yes |
+| `if cond do`, `elseif cond do` | `then` in place of `do` | yes |
+| `var += exp` | `var = var + (exp)` | yes |
+| `var -= exp` | `var = var - (exp)` | yes |
+| `var *= exp` | `var = var * (exp)` | yes |
+| `var /= exp` | `var = var / (exp)` | yes |
+| `?a, b` | `print(a, b)` | yes |
+| `0b1010` | `0xa` | yes |
+| `0b1010.1` | `0xa.8` | yes |
+| `⬅` `➡` `⬆` `⬇` `🅾` `❎` | `0` `1` `2` `3` `4` `5` | yes |
+| "⬅ ➡ ⬆ ⬇ 🅾 ❎" | "⬅ ➡ ⬆ ⬇ 🅾 ❎" | yes |
+| fillp glyphs (`█` is `0.5`) | that pattern number | yes |
+| `#include path` | whatever `patch_includes` returns | yes |
+| `a \ b` | `a // b` | not yet |
+| `a ^^ b` | `a ~ b` | not yet |
+| `a >>> b` | `lshr(a, b)` | not yet |
+| `a <<> b` | `rotl(a, b)` | not yet |
+| `a >>< b` | `rotr(a, b)` | not yet |
+| `@a` | `peek(a)` | not yet |
+| `%a` | `peek2(a)` | not yet |
+| `$a` | `peek4(a)` | not yet |
+
+Compound assignment is expanded even when the operator is not. `a \= b` becomes `a = a \ (b)`. `a ~ b` is xor, which Lua already spells that way, but this parser rejects it.
+
+`//`, `!=`, and glyphs inside a string stay as written. A glyph used as a name, such as `♥.x`, stays a name. `#include` is only recognized at the start of a line, and only `patch_includes` replaces it.
 
 ## Word of Caution
 
