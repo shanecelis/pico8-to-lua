@@ -1,6 +1,6 @@
 # pico8-to-lua
 
-A library and command line tool to convert Pico-8's Lua dialect into plain Lua. 
+A library and command line tool to convert Pico-8's Lua dialect into standard Lua.
 
 ## Installation
 
