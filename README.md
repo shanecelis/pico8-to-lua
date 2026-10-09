@@ -16,11 +16,13 @@ cargo install pico8-to-lua
 cargo add pico8-to-lua --no-default-features
 ```
 
-The `cli` feature is enabled by default, but it's not necessary for the library.
+The default `cli` feature is not necessary for the library.
 
 ## Examples
 
 ### Patch a cart
+
+This converts the `__lua__` section of the cart to plain Lua.
 
 ``` sh
 pico8-to-lua convert cart.p8 > patched-cart.p8
@@ -28,24 +30,28 @@ pico8-to-lua convert cart.p8 > patched-cart.p8
 
 Print only the Lua section:
 
-``` sh
-# cart.p8's Lua is: if (true) x += 1
+``` console
+$ cat cart.p8
+pico-8 cartridge // http://www.pico-8.com
+version 19
+__lua__
+if (true) x += 1
 $ pico8-to-lua convert --lua-only cart.p8
 if true then x = x + (1) end
 ```
 
-Omitting `convert` is the same command, so `pico8-to-lua cart.p8` and `pico8-to-lua --lua-only cart.p8` work too.
-
 ### Patch stdin
 
-``` sh
+``` console
 $ echo "if (true) x+= 1" | pico8-to-lua convert -
 if true then x = x + (1) end
 ```
 
 ### Check carts
 
-``` sh
+One can check the syntax of many carts.
+
+``` console
 $ pico8-to-lua check a.p8 b.p8
 ok a.p8
 ok b.p8
@@ -54,7 +60,7 @@ ok b.p8
 
 `-q` prints failures only:
 
-``` sh
+``` console
 $ pico8-to-lua check -q bad.lua
 FAIL bad.lua
 1:1
@@ -67,7 +73,7 @@ FAIL bad.lua
 1 of 1 failed
 ```
 
-``` sh
+``` console
 $ echo "if (true) x+= 1" | pico8-to-lua check -
 ok -
 1 file ok
@@ -90,6 +96,9 @@ assert_eq!(patch_lua("x += 1").unwrap(), "x = x + (1)");
 ``` rust
 use pico8_to_lua::patch_includes;
 use std::borrow::Cow;
+/// This callback function accepts a path and returns a string. Typically it
+/// might look at the file system and return the contents of file at the given
+/// path. This function merely leaves a Lua comment for purposes of this test.
 fn comment_it(path: &str) -> Cow<'static, str> {
     format!("-- INCLUDE '{}'", path).into()
 }
@@ -105,7 +114,8 @@ rotation operators: '>><' and '<<>'.
 
 ## Word of Caution
 
-`patch_lua` parses Pico-8 Lua and rewrites the dialect in place. A file that does not parse returns an error.
+`patch_lua` parses Pico-8 Lua and rewrites the dialect into standard Lua. A file
+that does not parse returns an error.
 
 ## Origin
 
