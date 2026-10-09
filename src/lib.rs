@@ -685,6 +685,20 @@ local key = keys[i]
         assert_eq!(parse::try_patch("a = 0b0.00001").unwrap(), "a = 0x0.08");
     }
 
+    /// README rows that are not rewritten yet.
+    #[test_case(r"a = b \ c", "a = b // c" ; "floor division")]
+    #[test_case("a = b ^^ c", "a = b ~ c" ; "xor")]
+    #[test_case("a = b >>> c", "a = lshr(b, c)" ; "logical shift right")]
+    #[test_case("a = b <<> c", "a = rotl(b, c)" ; "rotate left")]
+    #[test_case("a = b >>< c", "a = rotr(b, c)" ; "rotate right")]
+    #[test_case("a = @b", "a = peek(b)" ; "peek")]
+    #[test_case("a = %b", "a = peek2(b)" ; "peek2")]
+    #[test_case("a = $b", "a = peek4(b)" ; "peek4")]
+    #[test_case("a = b ~ c", "a = b ~ c" ; "binary xor")]
+    fn unimplemented_dialect(src: &str, expected: &str) {
+        assert_eq!(ok(src), expected);
+    }
+
     /// Ensure our capcity calculation is correct.
     fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
         let out = super::splice(src, edits);
