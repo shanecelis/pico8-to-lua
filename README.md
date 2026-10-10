@@ -149,21 +149,31 @@ Compound assignment uses those same operators. `a \= b` becomes `a = a // (b)`, 
 
 `//`, `!=`, and glyphs inside a string stay as written. A glyph used as a name, such as `♥.x`, stays a name. `#include` is only recognized at the start of a line, and only `patch_includes` replaces it.
 
-## Word of Caution
+## Word of Caution Declaimed
 
-`patch_lua` parses Pico-8 Lua and rewrites the dialect into standard Lua. A file
-that does not parse returns an error.
+The version 0.1 implementations use regex subsitutions, which may fail for
+acceptable Pico-8 Lua code because Lua is not a [regular
+language](https://en.wikipedia.org/wiki/Regular_language). Since version 0.2.0
+the transformation code in this crate has been rewritten to use a PEG parser
+using the [pest](https://crates.io/crates/pest) crate, which can express
+grammars beyond regular languages like Lua, so in principle it can express the
+complete grammar without error. Any failures to do so are bugs.
 
-## Origin
+## Origin and Acknowledgments
 
-This is a port of [Ben Wiley's
+This was a port of [Ben Wiley's
 pico8-to-lua](https://github.com/benwiley4000/pico8-to-lua/) Lua tool to Rust.
 Pico8-to-lua was originally derived from a function in Jez Kabanov's
 [PICOLOVE](https://github.com/picolove/picolove/) project.
 
+
+Thank you to [Ben Wiley](https://github.com/benwiley4000) and [Jez
+Kabanov](https://github.com/Shoozza) for their original code and choice of a
+permissive license that permits this kind of work.
+
 ## License 
 
 PICOLOVE is licensed under the Zlib license and so is Wiley's pico8-to-lua and
-so this project is.
+so this project is too.
 
 
