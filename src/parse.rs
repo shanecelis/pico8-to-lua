@@ -11,9 +11,6 @@ use std::borrow::Cow;
 /// Why a snippet failed to parse.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum ParseError {
-    /// The parser returned no pairs.
-    #[error("empty parse")]
-    Empty,
     /// The grammar rejected the snippet.
     #[error(transparent)]
     Pest(#[from] pest::error::Error<Rule>),
@@ -22,16 +19,12 @@ pub enum ParseError {
 impl ParseError {
     /// 1-based line and column of the failure.
     pub fn line_column(&self) -> (u32, u32) {
-        match self {
-            ParseError::Empty => (1, 1),
-            ParseError::Pest(err) => {
-                let (line, column) = match err.line_col {
-                    LineColLocation::Pos((line, column))
-                    | LineColLocation::Span((line, column), _) => (line, column),
-                };
-                (line as u32, column as u32)
-            }
-        }
+        let ParseError::Pest(err) = self;
+        let (line, column) = match err.line_col {
+            LineColLocation::Pos((line, column))
+            | LineColLocation::Span((line, column), _) => (line, column),
+        };
+        (line as u32, column as u32)
     }
 }
 
@@ -47,11 +40,13 @@ struct Edit<'a> {
 
 /// Parse `src` and rewrite Pico-8 dialect, preserving everything else.
 ///
-/// `Err` is the parse failure. `Ok` is the rewritten source, borrowed when
-/// nothing changed.
+/// `Err` is the parse failure. `Ok` is either the owned rewritten source, or
+/// borrowed argument that was given.
 pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ParseError> {
     let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from)?;
-    let chunk = pairs.next().ok_or(ParseError::Empty)?;
+    let Some(chunk) = pairs.next() else {
+        return Ok(Cow::Borrowed(src));
+    };
     let mut edits = gap_comment_edits(src, &chunk);
     collect(chunk, src, &mut edits);
     if edits.is_empty() {
