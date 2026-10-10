@@ -86,12 +86,18 @@ pico8-to-lua check -r carts/
 ```
 
 ### Patch the Code
+
+This will convert any Pico-8 Lua code into standard Lua.
+
 ``` rust
 use pico8_to_lua::patch_lua;
 assert_eq!(patch_lua("x += 1").unwrap(), "x = x + (1)");
 ```
 
 ### Patch the Includes
+
+This does not do any source translation; it merely processes the `#include
+file.p8` and subsitutes them with the result of the callback function.
 
 ``` rust
 use pico8_to_lua::patch_includes;
@@ -104,8 +110,8 @@ fn comment_it(path: &str) -> Cow<'static, str> {
 }
 assert_eq!(patch_includes("#include file.p8", comment_it), "-- INCLUDE 'file.p8'");
 ```
-It's recommended to patch the includes before patching the code in practice
-because the includes may need patching as well.
+It is recommended to patch the includes before patching the code
+because the includes may need source translation as well.
 
 ## Transformations
 
@@ -139,7 +145,7 @@ because the includes may need patching as well.
 | `%a` | `peek2(a)` | yes |
 | `$a` | `peek4(a)` | yes |
 
-Compound assignment uses those same operators. `a \= b` becomes `a = a // (b)`, and `a >>>= b` becomes `a = lshr(a, (b))`. Binary `a ~ b` is already Lua, so it is left as written.
+Compound assignment uses those same operators. `a \= b` becomes `a = a // (b)`, and `a >>>= b` becomes `a = lshr(a, (b))`. 
 
 `//`, `!=`, and glyphs inside a string stay as written. A glyph used as a name, such as `♥.x`, stays a name. `#include` is only recognized at the start of a line, and only `patch_includes` replaces it.
 
