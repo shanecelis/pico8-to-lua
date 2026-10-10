@@ -129,7 +129,7 @@ because the includes may need patching as well.
 | `⬅` `➡` `⬆` `⬇` `🅾` `❎` | `0` `1` `2` `3` `4` `5` | yes |
 | "⬅ ➡ ⬆ ⬇ 🅾 ❎" | "⬅ ➡ ⬆ ⬇ 🅾 ❎" | yes |
 | fillp glyphs (`█` is `0.5`) | that pattern number | yes |
-| `#include path` | whatever `patch_includes` returns | yes |
+| `#include path` | result of callback `fn(&str) -> String` | yes |
 | `a \ b` | `a // b` | yes |
 | `a ^^ b` | `a ~ b` | yes |
 | `a >>> b` | `lshr(a, b)` | yes |

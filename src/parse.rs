@@ -11,7 +11,7 @@ use std::fmt;
 
 /// A Pico-8 snippet the grammar rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseError {
+pub struct Error {
     /// 1-based line of the failure.
     pub line: usize,
     /// 1-based column of the failure.
@@ -19,7 +19,7 @@ pub struct ParseError {
     message: String,
 }
 
-impl ParseError {
+impl Error {
     fn from_pest(err: pest::error::Error<Rule>) -> Self {
         let (line, column) = match err.line_col {
             LineColLocation::Pos((line, column)) | LineColLocation::Span((line, column), _) => {
@@ -34,13 +34,13 @@ impl ParseError {
     }
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for Error {}
 
 #[derive(Parser)]
 #[grammar = "src/p8lua.pest"]
@@ -56,9 +56,9 @@ struct Edit<'a> {
 ///
 /// `Err` is the parse failure. `Ok` is the rewritten source, borrowed when
 /// nothing changed.
-pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ParseError> {
-    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from_pest)?;
-    let chunk = pairs.next().ok_or_else(|| ParseError {
+pub fn try_patch(src: &str) -> Result<Cow<'_, str>, Error> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(Error::from_pest)?;
+    let chunk = pairs.next().ok_or_else(|| Error {
         line: 1,
         column: 1,
         message: "empty parse".to_string(),
@@ -80,8 +80,8 @@ pub(crate) struct Include<'a> {
 /// `#include` directives whose `#` is the first non-space character on the line.
 ///
 /// A source that does not parse has no directives.
-pub(crate) fn includes(src: &str) -> Result<Vec<Include<'_>>, ParseError> {
-    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from_pest)?;
+pub(crate) fn includes(src: &str) -> Result<Vec<Include<'_>>, Error> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(Error::from_pest)?;
     let Some(chunk) = pairs.next() else {
         return Ok(Vec::new());
     };

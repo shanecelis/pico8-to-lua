@@ -11,17 +11,17 @@
 /// [here](https://github.com/benwiley4000/pico8-to-lua/blob/master/pico8-to-lua.lua).
 ///
 /// Licensed under the Zlib license.
-use std::{borrow::Cow, error::Error};
+use std::borrow::Cow;
 
 mod parse;
 
-pub use parse::ParseError;
+pub use parse::Error;
 
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
 ///
 /// If there are substitution errors, the first error will be returned. A source
 /// that does not parse is returned unchanged.
-pub fn try_patch_includes<'h, E: Error>(
+pub fn try_patch_includes<'h, E: std::error::Error>(
     lua: impl Into<Cow<'h, str>>,
     mut resolve: impl FnMut(&str) -> Result<String, E>,
 ) -> Result<Cow<'h, str>, E> {
@@ -122,11 +122,11 @@ fn splice(src: &str, edits: &[(usize, usize, String)]) -> String {
 ///
 /// A source that does not parse yields no paths. An include written inside a
 /// string or a comment is not a directive.
-pub fn find_includes(lua: &str) -> impl Iterator<Item = String> {
+pub fn find_includes(lua: &str) -> impl Iterator<Item = &str> {
     parse::includes(lua)
         .unwrap_or_default()
         .into_iter()
-        .map(|include| include.path.to_string())
+        .map(|include| include.path)
 }
 
 /// Given a string with the Pico-8 dialect of Lua, it will convert that code to
@@ -137,8 +137,8 @@ pub fn find_includes(lua: &str) -> impl Iterator<Item = String> {
 /// inclusions may use the Pico-8 dialect.
 ///
 /// Parses Pico-8 Lua and rewrites the dialect in place. A snippet that does not
-/// parse returns [`ParseError`].
-pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, ParseError> {
+/// parse returns [`Error`].
+pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, Error> {
     let lua = lua.into();
     match parse::try_patch(lua.as_ref())? {
         Cow::Borrowed(_) => Ok(lua),
