@@ -7,40 +7,33 @@ use pest::Parser;
 use pest::error::LineColLocation;
 use pest_derive::Parser;
 use std::borrow::Cow;
-use std::fmt;
 
-/// A Pico-8 snippet the grammar rejected.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Error {
-    /// 1-based line of the failure.
-    pub line: usize,
-    /// 1-based column of the failure.
-    pub column: usize,
-    message: String,
+/// Why a snippet failed to parse.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum ParseError {
+    /// The parser returned no pairs.
+    #[error("empty parse")]
+    Empty,
+    /// The grammar rejected the snippet.
+    #[error(transparent)]
+    Pest(#[from] pest::error::Error<Rule>),
 }
 
-impl Error {
-    fn from_pest(err: pest::error::Error<Rule>) -> Self {
-        let (line, column) = match err.line_col {
-            LineColLocation::Pos((line, column)) | LineColLocation::Span((line, column), _) => {
-                (line, column)
+impl ParseError {
+    /// 1-based line and column of the failure.
+    pub fn line_column(&self) -> (u32, u32) {
+        match self {
+            ParseError::Empty => (1, 1),
+            ParseError::Pest(err) => {
+                let (line, column) = match err.line_col {
+                    LineColLocation::Pos((line, column))
+                    | LineColLocation::Span((line, column), _) => (line, column),
+                };
+                (line as u32, column as u32)
             }
-        };
-        Self {
-            line,
-            column,
-            message: err.to_string(),
         }
     }
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[derive(Parser)]
 #[grammar = "src/p8lua.pest"]
@@ -56,13 +49,9 @@ struct Edit<'a> {
 ///
 /// `Err` is the parse failure. `Ok` is the rewritten source, borrowed when
 /// nothing changed.
-pub fn try_patch(src: &str) -> Result<Cow<'_, str>, Error> {
-    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(Error::from_pest)?;
-    let chunk = pairs.next().ok_or_else(|| Error {
-        line: 1,
-        column: 1,
-        message: "empty parse".to_string(),
-    })?;
+pub fn try_patch(src: &str) -> Result<Cow<'_, str>, ParseError> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from)?;
+    let chunk = pairs.next().ok_or(ParseError::Empty)?;
     let mut edits = gap_comment_edits(src, &chunk);
     collect(chunk, src, &mut edits);
     if edits.is_empty() {
@@ -80,8 +69,8 @@ pub(crate) struct Include<'a> {
 /// `#include` directives whose `#` is the first non-space character on the line.
 ///
 /// A source that does not parse has no directives.
-pub(crate) fn includes(src: &str) -> Result<Vec<Include<'_>>, Error> {
-    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(Error::from_pest)?;
+pub(crate) fn includes(src: &str) -> Result<Vec<Include<'_>>, ParseError> {
+    let mut pairs = P8LuaParser::parse(Rule::chunk, src).map_err(ParseError::from)?;
     let Some(chunk) = pairs.next() else {
         return Ok(Vec::new());
     };

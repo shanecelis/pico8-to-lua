@@ -19,11 +19,11 @@ repository = "https://github.com/shanecelis/pico8-to-lua"
 lexopt = { version = "0.3", optional = true }
 pest = "2.8"
 pest_derive = "2.8"
-thiserror = { version = "2", optional = true }
+thiserror = "2"
 
 [features]
 default = ["cli"]
-cli = ["dep:lexopt", "dep:thiserror"]
+cli = ["dep:lexopt"]
 
 [[bin]]
 name = "pico8-to-lua"

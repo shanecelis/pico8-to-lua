@@ -15,7 +15,7 @@ use std::borrow::Cow;
 
 mod parse;
 
-pub use parse::Error;
+pub use parse::ParseError;
 
 /// Resolve the Pico-8 "#include path.p8" statements with possible errors.
 ///
@@ -137,8 +137,8 @@ pub fn find_includes(lua: &str) -> impl Iterator<Item = &str> {
 /// inclusions may use the Pico-8 dialect.
 ///
 /// Parses Pico-8 Lua and rewrites the dialect in place. A snippet that does not
-/// parse returns [`Error`].
-pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, Error> {
+/// parse returns [`ParseError`].
+pub fn patch_lua<'h>(lua: impl Into<Cow<'h, str>>) -> Result<Cow<'h, str>, ParseError> {
     let lua = lua.into();
     match parse::try_patch(lua.as_ref())? {
         Cow::Borrowed(_) => Ok(lua),
@@ -742,7 +742,7 @@ local key = keys[i]
     fn test_parse_failure_is_an_error() {
         let src = "@@";
         let err = patch_lua(src).unwrap_err();
-        assert_eq!((err.line, err.column), (1, 1));
+        assert_eq!(err.line_column(), (1, 1));
         let message = err.to_string();
         assert!(message.contains("@@"), "{message}");
         assert!(message.contains("expected"), "{message}");

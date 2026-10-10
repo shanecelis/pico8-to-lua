@@ -183,7 +183,10 @@ fn classify(input: &str) -> Translated {
     };
     match patch_lua(src) {
         Ok(_) => Translated::Ok,
-        Err(err) => Translated::Fail(format!("{}:{}\n{err}", err.line, err.column)),
+        Err(err) => {
+            let (line, column) = err.line_column();
+            Translated::Fail(format!("{}:{}\n{err}", line, column))
+        }
     }
 }
 
