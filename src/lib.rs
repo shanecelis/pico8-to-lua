@@ -30,28 +30,18 @@ pub fn try_patch_includes<'h, E: std::error::Error>(
     if includes.is_empty() {
         return Ok(lua);
     }
-    let mut error = None;
     let mut edits = Vec::with_capacity(includes.len());
     for include in includes {
         match resolve(include.path) {
             Ok(s) => edits.push((include.start, include.end, s)),
             Err(e) => {
-                // This is kind of pointless since the user will never get
-                // access to the string. I'm leaving here incase the results
-                // change to make it relevant later.
-                let result = format!("error(\"failed to include {:?}: {}\")", include.path, e);
-                if error.is_none() {
-                    error = Some(e);
-                }
-                edits.push((include.start, include.end, result));
+                // eprintln!("error(\"failed to include {:?}: {}\")", include.path, e);
+                return Err(e);
             }
         }
     }
     let patched = Cow::Owned(splice(lua.as_ref(), &edits));
-    match error {
-        Some(err) => Err(err),
-        None => Ok(patched),
-    }
+    Ok(patched)
 }
 
 /// Returns true if the patch_output was patched by testing whether it is
